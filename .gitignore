@@ -1,0 +1,10 @@
+.env
+node_modules/
+.DS_Store
+backend/db.json
+*.log
+.~*
+*.docx
+
+.idea/
+*.iml

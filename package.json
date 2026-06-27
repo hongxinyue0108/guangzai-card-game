@@ -1,0 +1,12 @@
+{
+  "name": "guangzai-card-game",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "HOST=127.0.0.1 PORT=8787 node backend/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

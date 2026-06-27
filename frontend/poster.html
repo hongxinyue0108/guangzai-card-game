@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>光仔卡牌二维码海报</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="poster-body">
+    <main class="poster-app">
+      <section class="campaign-poster">
+        <div class="poster-badge">光仔卡牌</div>
+        <div class="rift"></div>
+        <h1>名场面宇宙<br />正在失控</h1>
+        <h2>抽卡 · 收集 · 分享领奖</h2>
+        <p class="poster-copy">
+          拾起玩家社区的高光、冥场面与经典瞬间。扫描二维码，进入名场面之殿，开启你的第一包记忆晶核。
+        </p>
+        <div class="qr-panel">
+          <img id="qrImage" alt="游戏入口二维码" />
+        </div>
+        <strong class="scan-text">扫描二维码</strong>
+        <p class="poster-slogan">化身拾忆者，收集崩坏前的每一个名场面</p>
+      </section>
+
+      <section class="poster-tools panel">
+        <label>二维码跳转地址<input id="targetUrl" /></label>
+        <button id="refreshQr" class="secondary">刷新二维码</button>
+        <a class="primary link-button" href="./index.html">返回游戏</a>
+        <p class="hint">
+          手机扫码演示时，请先用电脑局域网地址打开本页，例如 http://电脑IP:5173/poster.html。
+        </p>
+      </section>
+    </main>
+    <script src="./poster.js"></script>
+  </body>
+</html>
