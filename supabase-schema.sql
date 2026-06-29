@@ -4,6 +4,8 @@ create table if not exists players (
   password_hash text not null,
   score integer not null default 0,
   fragments integer not null default 0,
+  heat integer not null default 0,
+  reputation integer not null default 0,
   draw_chances integer not null default 3,
   last_recovered_at timestamptz not null default now(),
   opened_packs integer not null default 0,
@@ -11,12 +13,20 @@ create table if not exists players (
   share_rewards jsonb not null default '{}'::jsonb,
   task_rewards jsonb not null default '{}'::jsonb,
   series_rewards jsonb not null default '{}'::jsonb,
+  milestone_rewards jsonb not null default '{"score":{},"packs":{}}'::jsonb,
+  challenge_state jsonb not null default '{}'::jsonb,
+  effect_state jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table players
-  add column if not exists last_recovered_at timestamptz not null default now();
+  add column if not exists last_recovered_at timestamptz not null default now(),
+  add column if not exists heat integer not null default 0,
+  add column if not exists reputation integer not null default 0,
+  add column if not exists milestone_rewards jsonb not null default '{"score":{},"packs":{}}'::jsonb,
+  add column if not exists challenge_state jsonb not null default '{}'::jsonb,
+  add column if not exists effect_state jsonb not null default '{}'::jsonb;
 
 create table if not exists sessions (
   token text primary key,

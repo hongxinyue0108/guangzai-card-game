@@ -204,6 +204,12 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .section-head h3 {
   margin-bottom: 0;
   white-space: nowrap;
@@ -220,9 +226,28 @@ button:disabled {
   padding: 0 12px;
 }
 
+.help-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(245, 193, 93, 0.56);
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(27, 32, 49, 0.86);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 18px rgba(245, 193, 93, 0.12);
+}
+
+.help-button:active {
+  transform: translateY(1px);
+}
+
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -571,6 +596,114 @@ button:disabled {
 .rarity-glow-epic { box-shadow: 0 0 46px rgba(177,124,255,0.78); }
 .rarity-glow-legend { box-shadow: 0 0 56px rgba(245,193,93,0.9); }
 .rarity-glow-hidden { box-shadow: 0 0 64px rgba(239,111,108,0.95); }
+
+.event-panel {
+  margin-bottom: 12px;
+  border: 1px solid rgba(245, 193, 93, 0.36);
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 16% 10%, rgba(245,193,93,0.18), transparent 28%),
+    rgba(27, 32, 49, 0.9);
+}
+
+.challenge-box {
+  display: grid;
+  gap: 10px;
+}
+
+.challenge-card h4 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.challenge-card p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.choice-button {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  border: 1px solid rgba(104,216,214,0.42);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text);
+  text-align: left;
+  background: rgba(104,216,214,0.09);
+}
+
+.choice-button b {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #201607;
+  background: var(--gold);
+}
+
+.choice-button span {
+  line-height: 1.35;
+}
+
+.challenge-done,
+.choice-log,
+.effect-list {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(36, 43, 64, 0.72);
+}
+
+.challenge-done p,
+.choice-log span,
+.effect-list p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.choice-log small {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.challenge-result {
+  display: grid;
+  gap: 10px;
+}
+
+.challenge-result > p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.reward-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reward-chips span {
+  border: 1px solid rgba(245,193,93,0.48);
+  border-radius: 99px;
+  padding: 6px 10px;
+  color: #ffe4a2;
+  background: rgba(245,193,93,0.12);
+  font-size: 13px;
+  font-weight: 800;
+}
 
 .goal-panel {
   margin-top: 12px;
@@ -1263,8 +1396,70 @@ button:disabled {
   color: var(--green);
 }
 
+.guide {
+  display: grid;
+  gap: 12px;
+}
+
+.guide h3 {
+  margin-bottom: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.guide-lead,
+.guide-ranking p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guide-grid div,
+.guide-ranking {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(36, 43, 64, 0.72);
+}
+
+.guide-grid strong,
+.guide-ranking strong {
+  color: #ffe4a2;
+}
+
+.guide-grid p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .share-card-preview {
   text-align: center;
+}
+
+.share-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.share-link-text {
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--muted);
+  background: rgba(15, 18, 31, 0.72);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .share-mini-card {
@@ -1357,6 +1552,8 @@ button:disabled {
 .modal-card {
   position: relative;
   width: min(100%, 400px);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
   padding: 18px;
 }
 
@@ -1366,6 +1563,12 @@ button:disabled {
   right: 8px;
   width: 36px;
   min-height: 36px;
+}
+
+@media (max-width: 380px) {
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .share-page {
@@ -1548,4 +1751,145 @@ button:disabled {
 .poster-tools .secondary,
 .poster-tools .primary {
   margin-top: 8px;
+}
+
+.intro-overlay,
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+.intro-overlay {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 28px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(245,193,93,0.24), transparent 22%),
+    radial-gradient(circle at 18% 72%, rgba(104,216,214,0.18), transparent 28%),
+    linear-gradient(180deg, #070912, #12182a 55%, #05060b);
+}
+
+.intro-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.62;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.96) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(245,193,93,0.72) 0 1px, transparent 1.5px);
+  background-position: 0 0, 18px 26px;
+  background-size: 44px 44px, 72px 72px;
+  animation: starDrift 15s linear infinite;
+}
+
+.intro-gate {
+  position: absolute;
+  bottom: -80px;
+  left: 50%;
+  width: min(82vw, 360px);
+  height: 420px;
+  transform: translateX(-50%);
+  border: 2px solid rgba(245,193,93,0.56);
+  border-bottom: 0;
+  border-radius: 180px 180px 0 0;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255,255,255,0.2), transparent 18%),
+    linear-gradient(90deg, rgba(245,193,93,0.08), rgba(104,216,214,0.1), rgba(245,193,93,0.08));
+  box-shadow: 0 0 70px rgba(245,193,93,0.22), inset 0 0 40px rgba(255,255,255,0.08);
+  animation: gateOpen 15s ease-in-out forwards;
+}
+
+.intro-copy {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 390px);
+  text-align: center;
+  animation: introFloat 4s ease-in-out infinite;
+}
+
+.intro-copy h2 {
+  margin: 0 0 14px;
+  font-size: 28px;
+  line-height: 1.22;
+  text-shadow: 0 0 28px rgba(245,193,93,0.34);
+}
+
+.intro-copy p:last-child {
+  margin: 0;
+  color: rgba(246,241,232,0.86);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.intro-skip {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 2;
+  border: 1px solid rgba(255,255,255,0.28);
+  border-radius: 99px;
+  padding: 9px 14px;
+  color: #fff;
+  background: rgba(15,18,31,0.72);
+}
+
+.intro-skip:disabled {
+  opacity: 0.62;
+}
+
+@keyframes starDrift {
+  to { background-position: 0 120px, 18px 170px; }
+}
+
+@keyframes gateOpen {
+  0% { transform: translateX(-50%) scale(0.82); opacity: 0.28; }
+  45% { opacity: 0.72; }
+  100% { transform: translateX(-50%) scale(1.08); opacity: 1; }
+}
+
+@keyframes introFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.tour-overlay {
+  background: rgba(3, 5, 11, 0.64);
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 82;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(3,5,11,0.68), 0 0 28px rgba(245,193,93,0.5);
+  transition: all 0.24s ease;
+}
+
+.tour-card {
+  position: fixed;
+  left: 18px;
+  right: 18px;
+  z-index: 83;
+  display: grid;
+  gap: 9px;
+  max-width: 420px;
+  margin: 0 auto;
+  border: 1px solid rgba(245,193,93,0.5);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(27,32,49,0.96);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.42);
+}
+
+.tour-card h3,
+.tour-card p {
+  margin: 0;
+}
+
+.tour-card p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.6;
 }

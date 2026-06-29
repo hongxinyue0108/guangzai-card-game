@@ -3,18 +3,32 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const PORT = Number(process.env.PORT || 8787);
-const HOST = process.env.HOST || "127.0.0.1";
 const DB_FILE = path.join(__dirname, "db.json");
 const ROOT_DIR = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
 loadEnv(path.join(ROOT_DIR, ".env"));
 loadEnv(path.join(__dirname, ".env"));
+const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST || "0.0.0.0";
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const MAX_DRAW_CHANCES = 15;
 const DRAW_RECOVERY_INTERVAL_MS = 30 * 60 * 1000;
+const TOKEN_CACHE_TTL_MS = 2 * 60 * 1000;
+const tokenUserCache = new Map();
+const SCORE_MILESTONES = [
+  { score: 100, drawChances: 1, text: "积分达到 100，奖励 1 次抽卡" },
+  { score: 260, drawChances: 1, fragments: 20, text: "积分达到 260，奖励 1 次抽卡 + 20 碎片" },
+  { score: 520, drawChances: 2, text: "积分达到 520，奖励 2 次抽卡" },
+  { score: 900, drawChances: 3, fragments: 50, text: "积分达到 900，奖励 3 次抽卡 + 50 碎片" }
+];
+const PACK_MILESTONES = [
+  { packs: 5, drawChances: 1, text: "累计开包 5 次，返还 1 次抽卡" },
+  { packs: 10, drawChances: 1, fragments: 20, text: "累计开包 10 次，返还 1 次抽卡 + 20 碎片" },
+  { packs: 20, drawChances: 2, text: "累计开包 20 次，返还 2 次抽卡" },
+  { packs: 35, drawChances: 3, fragments: 40, text: "累计开包 35 次，返还 3 次抽卡 + 40 碎片" }
+];
 
 const SERIES = ["竞技高光", "冥场面", "社区梗", "经典瞬间"];
 const NPC_RANKING = [
@@ -60,6 +74,150 @@ const CARDS = [
   price: RARITIES[rarity].price,
   quote
 }));
+
+const MAX_DAILY_CHALLENGES = 3;
+const OPS_EVENTS = [
+  {
+    id: "version_burnout",
+    title: "版本太肝，玩家开始流失",
+    context: "玩家吐槽新版本任务像上班，社区热帖已经冲到首页。你作为光仔策划要先处理什么？",
+    choices: [
+      { id: "reduce_grind", text: "砍掉重复日常，把核心奖励前置", result: "玩家觉得你终于听劝了，口碑回升。", rewards: { reputation: 18, heat: 8, fragments: 12 } },
+      { id: "free_draw", text: "发 1 次抽卡补偿，先稳住情绪", result: "短期热度上来了，但玩家还在等后续优化。", rewards: { drawChances: 1, heat: 18, reputation: 4 } },
+      { id: "rank_event", text: "加限时冲榜活动，刺激活跃", result: "热度冲得很快，但疲劳玩家更破防了。", rewards: { heat: 28, reputation: -12, fragments: 8 } }
+    ]
+  },
+  {
+    id: "server_crash",
+    title: "服务器炸了，玩家群沸腾",
+    context: "晚高峰突然大面积掉线，群里开始刷屏。你要怎么止损？",
+    choices: [
+      { id: "clear_notice", text: "先发清晰公告，再补偿碎片", result: "信息透明，玩家至少知道发生了什么。", rewards: { reputation: 16, fragments: 18, heat: 6 } },
+      { id: "big_compensation", text: "直接发全服补偿，少解释", result: "大家先去领东西了，讨论热度也被压住。", rewards: { fragments: 30, reputation: 6, heat: 10 } },
+      { id: "silent_fix", text: "先闷头修，等好了再说", result: "服务恢复了，但沉默期间口碑掉得很快。", rewards: { heat: 16, reputation: -18, drawChances: 1 } }
+    ]
+  },
+  {
+    id: "share_campaign",
+    title: "需要设计一个分享活动",
+    context: "训练营要看谁的设计更有传播力。你准备怎么让玩家愿意转发？",
+    choices: [
+      { id: "poster_identity", text: "生成个性化结局海报，让玩家晒身份", result: "玩家愿意晒自己的称号，传播更自然。", rewards: { heat: 22, reputation: 12, drawChances: 1 } },
+      { id: "hard_invite", text: "强制邀请 3 个好友才能领奖", result: "数据看起来很高，但反感也在积累。", rewards: { heat: 34, reputation: -20, fragments: 16 } },
+      { id: "soft_bonus", text: "分享可领小奖励，不强制好友助力", result: "转发门槛低，虽然爆发没那么猛，但体验稳。", rewards: { heat: 14, reputation: 16, fragments: 20 } }
+    ]
+  },
+  {
+    id: "card_design",
+    title: "新卡面被吐槽不够有记忆点",
+    context: "玩家说卡只是好看，但抽到后没用。你准备怎么改？",
+    choices: [
+      { id: "card_effects", text: "给稀有卡加被动效果，影响挑战奖励", result: "卡牌从纪念品变成了能力，收集欲上升。", rewards: { reputation: 20, heat: 14, drawChances: 1 } },
+      { id: "more_art", text: "继续堆美术表现，先把卡面做帅", result: "视觉变强了，但玩法问题还没有完全解决。", rewards: { heat: 18, fragments: 18, reputation: 4 } },
+      { id: "rarity_only", text: "只提高传说卡概率，制造刺激", result: "短期爽感增加，但卡牌价值感被稀释。", rewards: { drawChances: 1, reputation: -10, heat: 20 } }
+    ]
+  },
+  {
+    id: "bug_meme",
+    title: "BUG 被玩家做成梗图疯传",
+    context: "角色模型在结算页突然变形，玩家剪了十几个鬼畜视频。你要怎么接招？",
+    choices: [
+      { id: "own_meme", text: "官方下场玩梗，同时承诺修复时间", result: "玩家觉得你接得住梗，骂声变成二创素材。", rewards: { heat: 26, reputation: 10, fragments: 12 } },
+      { id: "delete_posts", text: "先联系删帖，控制负面传播", result: "热帖少了，但玩家开始截图嘲讽你怕了。", rewards: { reputation: -18, heat: 18 } },
+      { id: "hidden_reward", text: "把 BUG 做成限时彩蛋，修复后发纪念卡", result: "灾难被包装成事件，玩家开始主动参与。", rewards: { heat: 22, reputation: 14, drawChances: 1 } }
+    ]
+  },
+  {
+    id: "newbie_churn",
+    title: "新玩家第一天留存很差",
+    context: "数据显示新玩家刚进来就迷路，不知道热度、口碑和碎片有什么用。",
+    choices: [
+      { id: "onboarding", text: "重做新手引导，先解释目标和奖励循环", result: "玩家终于知道自己为什么要开包和处理事件。", rewards: { reputation: 20, fragments: 10, heat: 8 } },
+      { id: "free_pack", text: "注册即送 5 抽，先制造爽感", result: "开局很热闹，但部分玩家抽完就走。", rewards: { drawChances: 2, heat: 18, reputation: 2 } },
+      { id: "more_buttons", text: "首页加更多入口，让玩家自己探索", result: "信息更丰富了，也更像一台没有说明书的机器。", rewards: { heat: 10, reputation: -10, fragments: 16 } }
+    ]
+  },
+  {
+    id: "whale_pressure",
+    title: "付费玩家和普通玩家吵起来了",
+    context: "社区争论奖励是不是太偏向重度玩家，普通玩家觉得自己永远追不上。",
+    choices: [
+      { id: "fair_ladder", text: "把排行榜奖励拆成参与档和冲榜档", result: "高手还有目标，普通玩家也能拿到正反馈。", rewards: { reputation: 18, heat: 12, fragments: 18 } },
+      { id: "hard_core", text: "继续强化冲榜刺激，制造头部竞争", result: "榜首打得很凶，但中腰部玩家开始躺平。", rewards: { heat: 28, reputation: -14, drawChances: 1 } },
+      { id: "equal_gift", text: "所有人发一样奖励，直接平息争议", result: "争吵暂时停了，但排行榜的追逐感也变弱了。", rewards: { reputation: 12, fragments: 28, heat: 4 } }
+    ]
+  },
+  {
+    id: "community_vote",
+    title: "下一张卡该做什么，社区吵翻了",
+    context: "一派想要高光瞬间，一派想要冥场面，评论区已经变成投票战场。",
+    choices: [
+      { id: "public_vote", text: "开放投票，让玩家决定下一张卡", result: "玩家参与感爆棚，顺手把投票链接转出去了。", rewards: { heat: 24, reputation: 12, fragments: 10 } },
+      { id: "designer_pick", text: "坚持策划判断，直接公布设计理由", result: "理由说清楚后有人理解，但没参与感。", rewards: { reputation: 14, heat: 8, fragments: 14 } },
+      { id: "both_cards", text: "两张都做，但降低单张制作规格", result: "大家都有糖吃，不过精品感被稀释了一点。", rewards: { heat: 18, reputation: 4, drawChances: 1 } }
+    ]
+  },
+  {
+    id: "boring_loop",
+    title: "玩家说每天只是点点点",
+    context: "有人吐槽：这不是游戏，是签到表换皮。你要怎么补玩法？",
+    choices: [
+      { id: "event_choice", text: "加入事件抉择，让奖励和选择绑定", result: "玩家开始讨论不同选择的后果，循环终于有了参与感。", rewards: { reputation: 18, heat: 18, drawChances: 1 } },
+      { id: "more_tasks", text: "增加更多每日任务，填满活跃时间", result: "在线时间涨了，但疲劳感也跟着涨。", rewards: { heat: 16, reputation: -8, fragments: 22 } },
+      { id: "auto_collect", text: "简化操作，让奖励自动领取", result: "压力降下来了，但可玩内容还是略薄。", rewards: { reputation: 12, fragments: 24, heat: 4 } }
+    ]
+  },
+  {
+    id: "bad_luck",
+    title: "非酋玩家开始晒黑脸截图",
+    context: "有人连续十包没出高稀有，评论区开始质疑概率不透明。",
+    choices: [
+      { id: "show_rates", text: "公开概率和保底规则", result: "信任感上升，玩家至少知道自己在和什么对赌。", rewards: { reputation: 22, heat: 8, fragments: 12 } },
+      { id: "luck_title", text: "给非酋玩家发专属称号和碎片补偿", result: "黑脸也变成可晒的身份，怨气少了不少。", rewards: { heat: 20, reputation: 12, fragments: 24 } },
+      { id: "ignore_rng", text: "强调随机就是随机，不做额外说明", result: "逻辑没错，但玩家情绪并不会因为逻辑消失。", rewards: { reputation: -16, heat: 14, drawChances: 1 } }
+    ]
+  },
+  {
+    id: "poster_weak",
+    title: "分享海报没人愿意转",
+    context: "海报信息很全，但像公告截图，玩家没有晒出去的冲动。",
+    choices: [
+      { id: "identity_poster", text: "突出玩家称号、结局和稀有卡，做成个人战绩", result: "玩家开始把海报当作自己的名片，而不是广告。", rewards: { heat: 24, reputation: 10, drawChances: 1 } },
+      { id: "qr_bigger", text: "把二维码放大，转化优先", result: "扫码更清楚了，但转发欲望没有明显变强。", rewards: { heat: 10, fragments: 18, reputation: 4 } },
+      { id: "reward_only", text: "只强调分享可领奖", result: "短期点击上升，但分享内容显得有点功利。", rewards: { heat: 20, reputation: -6, fragments: 16 } }
+    ]
+  },
+  {
+    id: "balance_patch",
+    title: "卡牌效果被吐槽不平衡",
+    context: "部分玩家说强卡太强，抽不到的人像少了一个系统。",
+    choices: [
+      { id: "soft_nerf", text: "降低触发频率，保留爽点", result: "强卡还值得期待，但不会压垮普通玩家。", rewards: { reputation: 18, heat: 8, fragments: 16 } },
+      { id: "buff_all", text: "给普通卡也加小效果", result: "每张卡都有点用，卡册价值更完整。", rewards: { reputation: 16, heat: 16, drawChances: 1 } },
+      { id: "no_change", text: "不改，强卡就该强", result: "拥有者很爽，没抽到的人开始沉默。", rewards: { heat: 18, reputation: -12, fragments: 12 } }
+    ]
+  },
+  {
+    id: "content_delay",
+    title: "新内容延期，玩家等急了",
+    context: "原定今天上线的新系列卡还没做完，群里已经开始催进度。",
+    choices: [
+      { id: "dev_log", text: "发布开发日志，展示半成品和延期原因", result: "玩家看到进度后愿意再等等。", rewards: { reputation: 18, heat: 10, fragments: 12 } },
+      { id: "teaser", text: "先放一张剪影预告，吊住期待", result: "猜测帖变多了，但也有人嫌你卖关子。", rewards: { heat: 24, reputation: 4, drawChances: 1 } },
+      { id: "quiet_delay", text: "不解释，等做完直接上线", result: "上线时内容还行，但等待期间流失了一些关注。", rewards: { reputation: -12, fragments: 24, heat: 8 } }
+    ]
+  },
+  {
+    id: "survey_fatigue",
+    title: "问卷发太多，玩家开始烦",
+    context: "你想收集反馈，但玩家吐槽每次打开都被问卷糊脸。",
+    choices: [
+      { id: "optional_reward", text: "改成可选入口，完成后给少量碎片", result: "愿意反馈的人留下了，不想填的人也不被打扰。", rewards: { reputation: 16, fragments: 18, heat: 6 } },
+      { id: "short_survey", text: "压缩成 3 个问题，结局页再出现", result: "打扰感变低，反馈质量也还可以。", rewards: { reputation: 14, heat: 10, drawChances: 1 } },
+      { id: "force_popup", text: "继续强弹，不填不能关", result: "样本量上去了，口碑也下去了。", rewards: { heat: 16, reputation: -18, fragments: 20 } }
+    ]
+  }
+];
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -141,13 +299,18 @@ async function readSupabaseDb() {
     passwordHash: row.password_hash,
     score: row.score,
     fragments: row.fragments,
+    heat: row.heat,
+    reputation: row.reputation,
     drawChances: row.draw_chances,
     lastRecoveredAt: row.last_recovered_at,
     openedPacks: row.opened_packs,
     ownedCards: row.owned_cards || {},
     shareRewards: row.share_rewards || {},
     taskRewards: row.task_rewards || {},
-    seriesRewards: row.series_rewards || {}
+    seriesRewards: row.series_rewards || {},
+    milestoneRewards: row.milestone_rewards || {},
+    challengeState: row.challenge_state || {},
+    effectState: row.effect_state || {}
   }));
   for (const row of sessions || []) db.sessions[row.token] = row.player_id;
   db.shares = (shares || []).map(row => ({
@@ -190,6 +353,259 @@ async function readSupabaseDb() {
   return db;
 }
 
+function rowToUser(row) {
+  if (!row) return null;
+  const user = {
+    id: row.id,
+    nickname: row.nickname,
+    passwordHash: row.password_hash,
+    score: row.score,
+    fragments: row.fragments,
+    heat: row.heat,
+    reputation: row.reputation,
+    drawChances: row.draw_chances,
+    lastRecoveredAt: row.last_recovered_at,
+    openedPacks: row.opened_packs,
+    ownedCards: row.owned_cards || {},
+    shareRewards: row.share_rewards || {},
+    taskRewards: row.task_rewards || {},
+    seriesRewards: row.series_rewards || {},
+    milestoneRewards: row.milestone_rewards || {},
+    challengeState: row.challenge_state || {},
+    effectState: row.effect_state || {}
+  };
+  ensureUserShape(user);
+  return user;
+}
+
+function userToPlayerRow(user) {
+  ensureUserShape(user);
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    password_hash: user.passwordHash,
+    score: user.score,
+    fragments: user.fragments,
+    heat: user.heat,
+    reputation: user.reputation,
+    draw_chances: user.drawChances,
+    last_recovered_at: user.lastRecoveredAt,
+    opened_packs: user.openedPacks,
+    owned_cards: user.ownedCards || {},
+    share_rewards: user.shareRewards || {},
+    task_rewards: user.taskRewards || {},
+    series_rewards: user.seriesRewards || {},
+    milestone_rewards: user.milestoneRewards || {},
+    challenge_state: user.challengeState || {},
+    effect_state: user.effectState || {},
+    updated_at: new Date().toISOString()
+  };
+}
+
+function eventToRow(event) {
+  return {
+    id: event.id || id("evt"),
+    type: event.type,
+    player_id: event.userId || event.ownerId || null,
+    share_id: event.shareId || null,
+    card_id: event.cardId || null,
+    scene: event.scene || null,
+    duplicated: event.duplicated ?? null,
+    rewarded: event.rewarded ?? null,
+    payload: { ...(event.payload || {}), ownerId: event.ownerId || event.payload?.ownerId },
+    created_at: event.createdAt || new Date().toISOString()
+  };
+}
+
+async function getPlayerByNickname(nickname) {
+  const rows = await supabaseFetch("players", {
+    query: `?nickname=eq.${encodeURIComponent(nickname)}&select=*&limit=1`
+  });
+  return rowToUser(rows?.[0]);
+}
+
+async function getPlayerById(userId) {
+  const rows = await supabaseFetch("players", {
+    query: `?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`
+  });
+  return rowToUser(rows?.[0]);
+}
+
+function bearerToken(req) {
+  const header = req.headers.authorization || "";
+  return header.replace(/^Bearer\s+/i, "");
+}
+
+function cacheUser(token, user) {
+  if (!token || !user) return;
+  tokenUserCache.set(token, {
+    user,
+    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS
+  });
+}
+
+function cachedUser(token) {
+  const item = tokenUserCache.get(token);
+  if (!item) return null;
+  if (item.expiresAt < Date.now()) {
+    tokenUserCache.delete(token);
+    return null;
+  }
+  item.expiresAt = Date.now() + TOKEN_CACHE_TTL_MS;
+  return item.user;
+}
+
+async function getUserByToken(req) {
+  const token = bearerToken(req);
+  if (!token) return null;
+  const cached = cachedUser(token);
+  if (cached) return cached;
+  const sessions = await supabaseFetch("sessions", {
+    query: `?token=eq.${encodeURIComponent(token)}&select=player_id&limit=1`
+  });
+  const playerId = sessions?.[0]?.player_id;
+  const user = playerId ? await getPlayerById(playerId) : null;
+  cacheUser(token, user);
+  return user;
+}
+
+async function updatePlayer(user) {
+  await upsert("players", [userToPlayerRow(user)], "id");
+}
+
+async function insertSession(token, userId) {
+  await supabaseFetch("sessions", {
+    method: "POST",
+    body: [{ token, player_id: userId }]
+  });
+}
+
+async function insertEvent(event) {
+  await supabaseFetch("events", {
+    method: "POST",
+    body: [eventToRow(event)]
+  });
+}
+
+function queueEvent(event) {
+  insertEvent(event).catch(error => {
+    console.error("event insert failed:", error.message);
+  });
+}
+
+async function insertDrawRecord(record) {
+  await supabaseFetch("draw_records", {
+    method: "POST",
+    body: [{
+      id: record.id,
+      player_id: record.userId,
+      nickname: record.nickname,
+      card_id: record.cardId,
+      card_name: record.cardName,
+      series: record.series,
+      rarity: record.rarity,
+      rarity_name: record.rarityName,
+      duplicated: record.duplicated,
+      score_gained: record.scoreGained,
+      fragments_gained: record.fragmentsGained,
+      created_at: record.createdAt
+    }]
+  });
+}
+
+async function getRecentDrawRecords(userId, limit = 20) {
+  const rows = await supabaseFetch("draw_records", {
+    query: `?player_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=${limit}`
+  });
+  return (rows || []).map(row => ({
+    id: row.id,
+    userId: row.player_id,
+    nickname: row.nickname,
+    cardId: row.card_id,
+    cardName: row.card_name,
+    series: row.series,
+    rarity: row.rarity,
+    rarityName: row.rarity_name,
+    duplicated: row.duplicated,
+    scoreGained: row.score_gained,
+    fragmentsGained: row.fragments_gained,
+    createdAt: row.created_at
+  }));
+}
+
+async function getTodayUserEvents(userId) {
+  const start = `${today()}T00:00:00.000Z`;
+  const rows = await supabaseFetch("events", {
+    query: `?player_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(start)}&select=*`
+  });
+  return (rows || []).map(row => ({
+    id: row.id,
+    type: row.type,
+    userId: row.player_id,
+    ownerId: row.payload?.ownerId || row.player_id,
+    shareId: row.share_id,
+    cardId: row.card_id,
+    scene: row.scene,
+    duplicated: row.duplicated,
+    rewarded: row.rewarded,
+    createdAt: row.created_at,
+    payload: row.payload || {}
+  }));
+}
+
+async function userViewFromSupabase(user) {
+  const [drawRecords, events] = await Promise.all([
+    getRecentDrawRecords(user.id),
+    getTodayUserEvents(user.id)
+  ]);
+  return userView(user, { drawRecords, events });
+}
+
+async function userViewWithTodayEvents(user) {
+  const events = await getTodayUserEvents(user.id);
+  return userView(user, { drawRecords: [], events });
+}
+
+async function getShareById(shareId) {
+  const rows = await supabaseFetch("shares", {
+    query: `?id=eq.${encodeURIComponent(shareId)}&select=*&limit=1`
+  });
+  const row = rows?.[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.player_id,
+    nickname: row.nickname,
+    scene: row.scene,
+    visits: row.visits,
+    rewarded: row.rewarded,
+    createdAt: row.created_at
+  };
+}
+
+async function insertShare(share) {
+  await upsert("shares", [{
+    id: share.id,
+    player_id: share.userId,
+    nickname: share.nickname,
+    scene: share.scene,
+    visits: share.visits,
+    rewarded: share.rewarded,
+    created_at: share.createdAt
+  }], "id");
+}
+
+async function updateShare(share) {
+  await insertShare(share);
+}
+
+async function getRankingPlayers() {
+  const rows = await supabaseFetch("players", {
+    query: "?select=id,nickname,score,heat,reputation,owned_cards&order=score.desc&limit=50"
+  });
+  return rows || [];
+}
+
 async function upsert(table, rows, conflict) {
   if (!rows.length) return;
   await supabaseFetch(table, {
@@ -207,6 +623,8 @@ async function writeSupabaseDb(db) {
     password_hash: user.passwordHash,
     score: user.score,
     fragments: user.fragments,
+    heat: user.heat,
+    reputation: user.reputation,
     draw_chances: user.drawChances,
     last_recovered_at: user.lastRecoveredAt,
     opened_packs: user.openedPacks,
@@ -214,6 +632,9 @@ async function writeSupabaseDb(db) {
     share_rewards: user.shareRewards || {},
     task_rewards: user.taskRewards || {},
     series_rewards: user.seriesRewards || {},
+    milestone_rewards: user.milestoneRewards || {},
+    challenge_state: user.challengeState || {},
+    effect_state: user.effectState || {},
     updated_at: new Date().toISOString()
   })), "id");
   await upsert("sessions", Object.entries(db.sessions).map(([token, userId]) => ({
@@ -321,8 +742,33 @@ function hash(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+function normalizeAccount(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function dayIndex(date = today()) {
+  return Math.floor(new Date(`${date}T00:00:00.000Z`).getTime() / 86_400_000);
+}
+
+function plannerTitle(user) {
+  ensureUserShape(user);
+  const total = user.heat + user.reputation + Object.keys(user.ownedCards).length * 12;
+  if (total >= 260) return "顶级共鸣策划";
+  if (total >= 170) return "高光运营官";
+  if (total >= 90) return "社区救火队长";
+  return "见习名场面策划";
+}
+
+function endingText(user) {
+  ensureUserShape(user);
+  if (user.reputation >= 120 && user.heat >= 120) return "你把热度和口碑都稳住了，玩家开始期待下一次活动。";
+  if (user.heat >= 150 && user.reputation < 60) return "你制造了爆点，但社区也留下了不少争议。";
+  if (user.reputation >= 120) return "你赢得了玩家信任，虽然热度还需要继续破圈。";
+  return "世界还没有崩塌，但你的策划案还需要更多高光时刻。";
 }
 
 function userView(user, db = null) {
@@ -335,6 +781,10 @@ function userView(user, db = null) {
     nickname: user.nickname,
     score: user.score,
     fragments: user.fragments,
+    heat: user.heat,
+    reputation: user.reputation,
+    plannerTitle: plannerTitle(user),
+    endingText: endingText(user),
     drawChances: user.drawChances,
     maxDrawChances: MAX_DRAW_CHANCES,
     lastRecoveredAt: user.lastRecoveredAt,
@@ -344,6 +794,9 @@ function userView(user, db = null) {
     shareRewards: user.shareRewards || {},
     taskRewards: user.taskRewards || {},
     seriesRewards: user.seriesRewards || {},
+    milestoneRewards: user.milestoneRewards || {},
+    challengeState: user.challengeState || {},
+    effectState: user.effectState || {},
     drawRecords: drawHistory,
     tasks: taskStatus(user, db)
   };
@@ -357,8 +810,15 @@ function ensureUserShape(user) {
   user.shareRewards ||= {};
   user.taskRewards ||= {};
   user.seriesRewards ||= {};
+  user.milestoneRewards ||= {};
+  user.milestoneRewards.score ||= {};
+  user.milestoneRewards.packs ||= {};
+  user.challengeState ||= {};
+  user.effectState ||= {};
   user.fragments ||= 0;
   user.score ||= 0;
+  user.heat ||= 0;
+  user.reputation ||= 0;
   user.drawChances ||= 0;
   user.drawChances = Math.min(user.drawChances, MAX_DRAW_CHANCES);
   user.lastRecoveredAt ||= new Date().toISOString();
@@ -391,6 +851,101 @@ function recoverDrawChances(user, now = new Date()) {
     ? now.toISOString()
     : new Date(lastTime + recoverable * DRAW_RECOVERY_INTERVAL_MS).toISOString();
   return gained;
+}
+
+function todayChallengeState(user) {
+  ensureUserShape(user);
+  const date = today();
+  user.challengeState[date] ||= { count: 0, choices: [] };
+  user.challengeState[date].choices ||= [];
+  user.challengeState[date].count ||= user.challengeState[date].choices.length;
+  return user.challengeState[date];
+}
+
+function seededNumber(seed) {
+  const value = crypto.createHash("sha256").update(seed).digest().readUInt32BE(0);
+  return value / 0xffffffff;
+}
+
+function dailyEventOrder(user) {
+  const date = today();
+  return OPS_EVENTS
+    .map(event => ({ event, roll: seededNumber(`${date}:${user.id}:${event.id}`) }))
+    .sort((a, b) => a.roll - b.roll)
+    .map(item => item.event);
+}
+
+function currentChallenge(user) {
+  const state = todayChallengeState(user);
+  if (state.count >= MAX_DAILY_CHALLENGES) return null;
+  return dailyEventOrder(user)[state.count % OPS_EVENTS.length];
+}
+
+function publicChallenge(event) {
+  if (!event) return null;
+  return {
+    id: event.id,
+    title: event.title,
+    context: event.context,
+    choices: event.choices.map(choice => ({ id: choice.id, text: choice.text }))
+  };
+}
+
+function challengeSummary(user) {
+  const state = todayChallengeState(user);
+  return {
+    todayCount: state.count,
+    maxDaily: MAX_DAILY_CHALLENGES,
+    remaining: Math.max(0, MAX_DAILY_CHALLENGES - state.count),
+    completed: state.count >= MAX_DAILY_CHALLENGES,
+    event: publicChallenge(currentChallenge(user)),
+    recentChoices: state.choices.slice(-3).reverse()
+  };
+}
+
+function markEffectUsed(user, effectId) {
+  const key = `${today()}:${effectId}`;
+  if (user.effectState[key]) return false;
+  user.effectState[key] = true;
+  return true;
+}
+
+function applyCardEffects(user, rewards) {
+  ensureUserShape(user);
+  const effects = [];
+  if (user.ownedCards.c001 && rewards.reputation < 0 && markEffectUsed(user, "c001")) {
+    effects.push("丝血反杀：抵消本次口碑损失");
+    rewards.reputation = 0;
+  }
+  if (user.ownedCards.c012 && rewards.fragments > 0) {
+    effects.push("全服补偿：额外 +5 碎片");
+    rewards.fragments += 5;
+  }
+  if (user.ownedCards.c003 && rewards.drawChances > 0 && markEffectUsed(user, "c003")) {
+    effects.push("五杀时刻：额外 +1 抽卡");
+    rewards.drawChances += 1;
+  }
+  if (user.ownedCards.c010 && rewards.heat > 0) {
+    effects.push("服务器维护：事件热度额外 +4");
+    rewards.heat += 4;
+  }
+  return effects;
+}
+
+function applyChallengeRewards(user, rewards) {
+  const result = {
+    heat: rewards.heat || 0,
+    reputation: rewards.reputation || 0,
+    fragments: rewards.fragments || 0,
+    drawChances: rewards.drawChances || 0
+  };
+  const effects = applyCardEffects(user, result);
+  user.heat = Math.max(0, user.heat + result.heat);
+  user.reputation = Math.max(0, user.reputation + result.reputation);
+  user.fragments += result.fragments;
+  if (result.drawChances) addDrawChances(user, result.drawChances);
+  user.score += Math.max(0, result.heat) + Math.max(0, result.reputation) * 2;
+  return { rewards: result, effects };
 }
 
 function currentUser(req, db) {
@@ -494,11 +1049,352 @@ function applySeriesRewards(user) {
   return rewards;
 }
 
+function applyMilestoneRewards(user) {
+  ensureUserShape(user);
+  const rewards = [];
+  for (const milestone of SCORE_MILESTONES) {
+    const key = String(milestone.score);
+    if (user.score < milestone.score || user.milestoneRewards.score[key]) continue;
+    user.milestoneRewards.score[key] = true;
+    if (milestone.drawChances) addDrawChances(user, milestone.drawChances);
+    if (milestone.fragments) user.fragments += milestone.fragments;
+    rewards.push(milestone.text);
+  }
+  for (const milestone of PACK_MILESTONES) {
+    const key = String(milestone.packs);
+    if (user.openedPacks < milestone.packs || user.milestoneRewards.packs[key]) continue;
+    user.milestoneRewards.packs[key] = true;
+    if (milestone.drawChances) addDrawChances(user, milestone.drawChances);
+    if (milestone.fragments) user.fragments += milestone.fragments;
+    rewards.push(milestone.text);
+  }
+  return rewards;
+}
+
+async function handleSupabase(req, res, url) {
+  try {
+    if (req.method === "GET" && url.pathname === "/api/cards") {
+      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/register") {
+      const body = await parseBody(req);
+      const password = String(body.password || "");
+      const nickname = normalizeAccount(body.nickname || body.username);
+      if (!/^[a-z0-9_\u4e00-\u9fa5]{2,18}$/i.test(nickname) || password.length < 3) {
+        return json(res, 400, { message: "账号需 2-18 位，可用中文、字母、数字、下划线；密码至少 3 位" });
+      }
+      if (await getPlayerByNickname(nickname)) {
+        return json(res, 409, { message: "这个名字已经被注册了，要不再换一个捏" });
+      }
+      const user = {
+        id: id("usr"),
+        passwordHash: hash(password),
+        nickname,
+        score: 0,
+        fragments: 0,
+        heat: 0,
+        reputation: 0,
+        drawChances: 3,
+        lastRecoveredAt: new Date().toISOString(),
+        openedPacks: 0,
+        ownedCards: {},
+        shareRewards: {},
+        taskRewards: {},
+        seriesRewards: {},
+        milestoneRewards: { score: {}, packs: {} },
+        challengeState: {},
+        effectState: {}
+      };
+      const token = id("tok");
+      await updatePlayer(user);
+      await insertSession(token, user.id);
+      cacheUser(token, user);
+      queueEvent({ type: "register", userId: user.id });
+      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/login") {
+      const body = await parseBody(req);
+      const nickname = normalizeAccount(body.nickname || body.username);
+      const user = await getPlayerByNickname(nickname);
+      if (!user || user.passwordHash !== hash(String(body.password || ""))) {
+        return json(res, 401, { message: "账号或密码错误" });
+      }
+      const token = id("tok");
+      const recovered = recoverDrawChances(user);
+      if (recovered) await updatePlayer(user);
+      await insertSession(token, user.id);
+      cacheUser(token, user);
+      queueEvent({ type: "login", userId: user.id });
+      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/profile") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      const events = await getTodayUserEvents(user.id);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      if (recovered || rewards.length) await updatePlayer(user);
+      return json(res, 200, { user: await userViewFromSupabase(user), rewards });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/challenge") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      if (recovered) await updatePlayer(user);
+      return json(res, 200, { challenge: challengeSummary(user), user: await userViewWithTodayEvents(user) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/challenge/choose") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      const state = todayChallengeState(user);
+      if (state.count >= MAX_DAILY_CHALLENGES) return json(res, 400, { message: "今日事件已处理完" });
+      const event = currentChallenge(user);
+      const body = await parseBody(req);
+      if (!event || body.eventId !== event.id) return json(res, 409, { message: "事件已刷新，请重试" });
+      const choice = event.choices.find(item => item.id === body.choiceId);
+      if (!choice) return json(res, 404, { message: "选项不存在" });
+      const outcome = applyChallengeRewards(user, { ...choice.rewards });
+      const entry = {
+        id: id("chg"),
+        eventId: event.id,
+        eventTitle: event.title,
+        choiceId: choice.id,
+        choiceText: choice.text,
+        result: choice.result,
+        rewards: outcome.rewards,
+        effects: outcome.effects,
+        createdAt: new Date().toISOString()
+      };
+      state.count += 1;
+      state.choices.push(entry);
+      queueEvent({ type: "challenge", userId: user.id, scene: event.id, payload: entry });
+      const events = await getTodayUserEvents(user.id);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updatePlayer(user);
+      return json(res, 200, {
+        outcome: entry,
+        rewards,
+        challenge: challengeSummary(user),
+        user: userView(user, { drawRecords: [], events })
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/draw") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      if (user.drawChances <= 0) return json(res, 400, { message: "抽卡次数不足" });
+      const card = weightedCard();
+      user.drawChances -= 1;
+      user.openedPacks += 1;
+      const oldCount = user.ownedCards[card.id] || 0;
+      let result;
+      if (oldCount > 0) {
+        user.ownedCards[card.id] = oldCount + 1;
+        user.fragments += card.fragment;
+        result = { duplicated: true, fragmentsGained: card.fragment, scoreGained: 0 };
+      } else {
+        user.ownedCards[card.id] = 1;
+        user.score += card.score;
+        result = { duplicated: false, fragmentsGained: 0, scoreGained: card.score };
+      }
+      const drawRecord = {
+        id: id("draw"),
+        userId: user.id,
+        nickname: user.nickname,
+        cardId: card.id,
+        cardName: card.name,
+        series: card.series,
+        rarity: card.rarity,
+        rarityName: card.rarityName,
+        duplicated: result.duplicated,
+        scoreGained: result.scoreGained,
+        fragmentsGained: result.fragmentsGained,
+        createdAt: new Date().toISOString()
+      };
+      const drawEvent = {
+        type: "draw",
+        userId: user.id,
+        cardId: card.id,
+        duplicated: result.duplicated,
+        createdAt: new Date().toISOString()
+      };
+      queueEvent(drawEvent);
+      const [events] = await Promise.all([
+        getTodayUserEvents(user.id),
+        insertDrawRecord(drawRecord)
+      ]);
+      events.push(drawEvent);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updatePlayer(user);
+      return json(res, 200, { card, result, drawRecord, rewards, user: userView(user, { drawRecords: [drawRecord], events }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/exchange") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      const body = await parseBody(req);
+      const card = CARDS.find(item => item.id === body.cardId);
+      if (!card) return json(res, 404, { message: "卡牌不存在" });
+      if (user.ownedCards[card.id]) return json(res, 400, { message: "你已经拥有这张卡" });
+      if (user.fragments < card.price) return json(res, 400, { message: "碎片不足" });
+      user.fragments -= card.price;
+      user.ownedCards[card.id] = 1;
+      user.score += card.score;
+      queueEvent({ type: "exchange", userId: user.id, cardId: card.id });
+      const events = await getTodayUserEvents(user.id);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updatePlayer(user);
+      return json(res, 200, { card, rewards, user: userView(user, { drawRecords: [], events }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/share/create") {
+      const user = await getUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      const body = await parseBody(req);
+      const scene = String(body.scene || "invite");
+      const share = {
+        id: id("shr"),
+        userId: user.id,
+        nickname: user.nickname,
+        scene,
+        visits: 0,
+        rewarded: false,
+        createdAt: new Date().toISOString()
+      };
+      await insertShare(share);
+      queueEvent({ type: "share_create", userId: user.id, shareId: share.id, scene });
+      if (recovered) await updatePlayer(user);
+      return json(res, 200, { share, shareUrl: `../frontend/share.html?shareId=${share.id}` });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/share/visit") {
+      const body = await parseBody(req);
+      const share = await getShareById(String(body.shareId || ""));
+      if (!share) return json(res, 404, { message: "分享不存在" });
+      const owner = await getPlayerById(share.userId);
+      if (!owner) return json(res, 404, { message: "分享者不存在" });
+      recoverDrawChances(owner);
+      share.visits += 1;
+      let reward = null;
+      const key = `${today()}:${share.scene}`;
+      if (!owner.shareRewards[key]) owner.shareRewards[key] = 0;
+      if (owner.shareRewards[key] < 1) {
+        owner.shareRewards[key] += 1;
+        addDrawChances(owner, 1);
+        share.rewarded = true;
+        reward = { drawChances: 1, message: "分享跳转奖励已到账" };
+      }
+      await updateShare(share);
+      const shareEvent = {
+        type: "share_visit",
+        shareId: share.id,
+        ownerId: owner.id,
+        scene: share.scene,
+        rewarded: Boolean(reward),
+        createdAt: new Date().toISOString()
+      };
+      queueEvent(shareEvent);
+      const events = await getTodayUserEvents(owner.id);
+      events.push(shareEvent);
+      const rewards = [...applyDailyTasks(owner, { events, drawRecords: [] }), ...applyMilestoneRewards(owner)];
+      await updatePlayer(owner);
+      return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ranking") {
+      const players = await getRankingPlayers();
+      const playerRows = players.map(row => {
+        const user = rowToUser(row);
+        return {
+          player: true,
+          userId: row.id,
+          nickname: row.nickname,
+          score: row.score || 0,
+          heat: row.heat || 0,
+          reputation: row.reputation || 0,
+          title: plannerTitle(user),
+          collected: Object.keys(row.owned_cards || {}).length,
+          total: CARDS.length
+        };
+      });
+      const ranking = [...playerRows, ...NPC_RANKING.map(npc => ({ ...npc, total: CARDS.length, player: false }))]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 50)
+        .map((row, index) => ({ rank: index + 1, ...row }));
+      return json(res, 200, { ranking });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/stats") {
+      const [users, shares, visits, draws] = await Promise.all([
+        supabaseFetch("players", { query: "?select=id" }),
+        supabaseFetch("shares", { query: "?select=id" }),
+        supabaseFetch("events", { query: "?type=eq.share_visit&select=id" }),
+        supabaseFetch("draw_records", { query: "?select=id" })
+      ]);
+      return json(res, 200, {
+        users: users?.length || 0,
+        shares: shares?.length || 0,
+        visits: visits?.length || 0,
+        draws: draws?.length || 0
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/users") {
+      const players = await supabaseFetch("players", {
+        query: "?select=id,nickname,score,heat,reputation,fragments,draw_chances,opened_packs,owned_cards&order=created_at.desc"
+      });
+      const users = await Promise.all((players || []).map(async row => ({
+        id: row.id,
+        nickname: row.nickname,
+        score: row.score || 0,
+        heat: row.heat || 0,
+        reputation: row.reputation || 0,
+        fragments: row.fragments || 0,
+        drawChances: row.draw_chances || 0,
+        openedPacks: row.opened_packs || 0,
+        collected: Object.keys(row.owned_cards || {}).length,
+        drawRecords: await getRecentDrawRecords(row.id, 50)
+      })));
+      return json(res, 200, { users });
+    }
+
+    return json(res, 404, { message: "接口不存在" });
+  } catch (error) {
+    return json(res, 500, { message: "服务器错误", detail: error.message });
+  }
+}
+
 async function handle(req, res) {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res, url);
+  if (USE_SUPABASE) return handleSupabase(req, res, url);
   const db = await readDb();
 
   try {
@@ -509,12 +1405,12 @@ async function handle(req, res) {
     if (req.method === "POST" && url.pathname === "/api/register") {
       const body = await parseBody(req);
       const password = String(body.password || "");
-      const nickname = String(body.nickname || "").trim();
-      if (nickname.length < 2 || password.length < 3) {
-        return json(res, 400, { message: "昵称至少 2 位，密码至少 3 位" });
+      const nickname = normalizeAccount(body.nickname || body.username);
+      if (!/^[a-z0-9_\u4e00-\u9fa5]{2,18}$/i.test(nickname) || password.length < 3) {
+        return json(res, 400, { message: "账号需 2-18 位，可用中文、字母、数字、下划线；密码至少 3 位" });
       }
       if (db.users.some(user => user.nickname === nickname)) {
-        return json(res, 409, { message: "昵称已被使用，请换一个" });
+        return json(res, 409, { message: "这个名字已经被注册了，要不再换一个捏" });
       }
       const user = {
         id: id("usr"),
@@ -522,13 +1418,18 @@ async function handle(req, res) {
         nickname,
         score: 0,
         fragments: 0,
+        heat: 0,
+        reputation: 0,
         drawChances: 3,
         lastRecoveredAt: new Date().toISOString(),
         openedPacks: 0,
         ownedCards: {},
         shareRewards: {},
         taskRewards: {},
-        seriesRewards: {}
+        seriesRewards: {},
+        milestoneRewards: { score: {}, packs: {} },
+        challengeState: {},
+        effectState: {}
       };
       const token = id("tok");
       db.users.push(user);
@@ -540,10 +1441,10 @@ async function handle(req, res) {
 
     if (req.method === "POST" && url.pathname === "/api/login") {
       const body = await parseBody(req);
-      const nickname = String(body.nickname || body.username || "").trim();
+      const nickname = normalizeAccount(body.nickname || body.username);
       const user = db.users.find(item => item.nickname === nickname);
       if (!user || user.passwordHash !== hash(String(body.password || ""))) {
-        return json(res, 401, { message: "昵称或密码错误" });
+        return json(res, 401, { message: "账号或密码错误" });
       }
       const token = id("tok");
       recoverDrawChances(user);
@@ -557,9 +1458,53 @@ async function handle(req, res) {
       const user = currentUser(req, db);
       if (!user) return json(res, 401, { message: "请先登录" });
       const recovered = recoverDrawChances(user);
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user)];
+      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
       if (recovered || rewards.length) await writeDb(db);
       return json(res, 200, { user: userView(user, db), rewards });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/challenge") {
+      const user = currentUser(req, db);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      if (recovered) await writeDb(db);
+      return json(res, 200, { challenge: challengeSummary(user), user: userView(user, db) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/challenge/choose") {
+      const user = currentUser(req, db);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      const state = todayChallengeState(user);
+      if (state.count >= MAX_DAILY_CHALLENGES) return json(res, 400, { message: "今日事件已处理完" });
+      const event = currentChallenge(user);
+      const body = await parseBody(req);
+      if (!event || body.eventId !== event.id) return json(res, 409, { message: "事件已刷新，请重试" });
+      const choice = event.choices.find(item => item.id === body.choiceId);
+      if (!choice) return json(res, 404, { message: "选项不存在" });
+      const outcome = applyChallengeRewards(user, { ...choice.rewards });
+      const entry = {
+        id: id("chg"),
+        eventId: event.id,
+        eventTitle: event.title,
+        choiceId: choice.id,
+        choiceText: choice.text,
+        result: choice.result,
+        rewards: outcome.rewards,
+        effects: outcome.effects,
+        createdAt: new Date().toISOString()
+      };
+      state.count += 1;
+      state.choices.push(entry);
+      record(db, { type: "challenge", userId: user.id, scene: event.id, payload: entry });
+      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      await writeDb(db);
+      return json(res, 200, {
+        outcome: entry,
+        rewards,
+        challenge: challengeSummary(user),
+        user: userView(user, db)
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/draw") {
@@ -581,7 +1526,6 @@ async function handle(req, res) {
         user.score += card.score;
         result = { duplicated: false, fragmentsGained: 0, scoreGained: card.score };
       }
-      if (user.openedPacks % 5 === 0) addDrawChances(user, 1);
       const drawRecord = {
         id: id("draw"),
         userId: user.id,
@@ -598,7 +1542,7 @@ async function handle(req, res) {
       };
       db.drawRecords.push(drawRecord);
       record(db, { type: "draw", userId: user.id, cardId: card.id, duplicated: result.duplicated });
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user)];
+      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
       await writeDb(db);
       return json(res, 200, { card, result, drawRecord, rewards, user: userView(user, db) });
     }
@@ -616,7 +1560,7 @@ async function handle(req, res) {
       user.ownedCards[card.id] = 1;
       user.score += card.score;
       record(db, { type: "exchange", userId: user.id, cardId: card.id });
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user)];
+      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
       await writeDb(db);
       return json(res, 200, { card, rewards, user: userView(user, db) });
     }
@@ -660,7 +1604,7 @@ async function handle(req, res) {
         reward = { drawChances: 1, message: "分享跳转奖励已到账" };
       }
       record(db, { type: "share_visit", shareId: share.id, ownerId: owner.id, scene: share.scene, rewarded: Boolean(reward) });
-      const rewards = applyDailyTasks(owner, db);
+      const rewards = [...applyDailyTasks(owner, db), ...applyMilestoneRewards(owner)];
       await writeDb(db);
       return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
     }
@@ -673,6 +1617,9 @@ async function handle(req, res) {
           userId: user.id,
           nickname: user.nickname,
           score: user.score,
+          heat: user.heat,
+          reputation: user.reputation,
+          title: plannerTitle(user),
           collected: Object.keys(user.ownedCards).length,
           total: CARDS.length
         }));
@@ -701,6 +1648,8 @@ async function handle(req, res) {
           id: user.id,
           nickname: user.nickname,
           score: user.score,
+          heat: user.heat,
+          reputation: user.reputation,
           fragments: user.fragments,
           drawChances: user.drawChances,
           openedPacks: user.openedPacks,
