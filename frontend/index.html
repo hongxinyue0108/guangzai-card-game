@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>光仔卡牌</title>
-    <link rel="stylesheet" href="./style.css?v=20260627-005" />
+    <link rel="stylesheet" href="./style.css?v=20260628-event-007" />
   </head>
   <body>
     <main class="app">
@@ -17,7 +17,7 @@
             <button id="showLogin" class="active">登录</button>
             <button id="showRegister">注册</button>
           </div>
-          <label>昵称<input id="nickname" placeholder="例如：hxy" /></label>
+          <label>账号<input id="nickname" placeholder="例如：hxy，只能注册一次" /></label>
           <label>密码<input id="password" type="password" placeholder="至少 3 位" /></label>
           <button id="authSubmit" class="primary">进入名场面之殿</button>
           <p id="authMessage" class="message"></p>
@@ -30,18 +30,30 @@
             <p class="eyebrow">拾忆者</p>
             <h2 id="nicknameText">-</h2>
           </div>
-          <button id="logoutBtn" class="ghost">退出</button>
+          <div class="topbar-actions">
+            <button id="helpBtn" class="help-button" aria-label="查看玩法说明" title="查看玩法说明">?</button>
+            <button id="logoutBtn" class="ghost">退出</button>
+          </div>
         </header>
 
         <section class="stats">
-          <div><span id="drawChances">0</span><small>抽卡次数</small></div>
-          <div><span id="score">0</span><small>积分</small></div>
-          <div><span id="fragments">0</span><small>碎片</small></div>
-          <div><span id="collection">0/0</span><small>收集</small></div>
+          <div data-tour="draws"><span id="drawChances">0</span><small>抽卡次数</small></div>
+          <div data-tour="heat"><span id="heat">0</span><small>热度</small></div>
+          <div data-tour="reputation"><span id="reputation">0</span><small>口碑</small></div>
+          <div data-tour="score"><span id="score">0</span><small>积分</small></div>
+          <div data-tour="fragments"><span id="fragments">0</span><small>碎片</small></div>
+          <div data-tour="collection"><span id="collection">0/0</span><small>收集</small></div>
         </section>
 
         <section id="homePage" class="page active">
-          <div id="packStage" class="pack-stage">
+          <div class="event-panel" data-tour="event">
+            <div class="section-head compact">
+              <h3>今日事件</h3>
+              <span id="challengeProgress">0/3</span>
+            </div>
+            <div id="challengeBox" class="challenge-box"></div>
+          </div>
+          <div id="packStage" class="pack-stage" data-tour="pack">
             <div class="stage-aura"></div>
             <div class="spark-field" aria-hidden="true">
               <i></i><i></i><i></i><i></i><i></i><i></i>
@@ -91,10 +103,31 @@
 
         <nav class="tabs">
           <button class="tab active" data-page="homePage">开包</button>
-          <button class="tab" data-page="albumPage">卡册</button>
-          <button class="tab" data-page="rankPage">排行</button>
+          <button class="tab" data-page="albumPage" data-tour="album">卡册</button>
+          <button class="tab" data-page="rankPage" data-tour="rank">排行</button>
         </nav>
       </section>
+
+      <div id="introOverlay" class="intro-overlay hidden">
+        <div class="intro-stars" aria-hidden="true"></div>
+        <div class="intro-gate" aria-hidden="true"></div>
+        <div class="intro-copy">
+          <p class="eyebrow">名场面之殿</p>
+          <h2 id="introTitle">宇宙深处，门正在开启</h2>
+          <p id="introText"></p>
+        </div>
+        <button id="introSkip" class="intro-skip" disabled>3 秒后可跳过</button>
+      </div>
+
+      <div id="tourOverlay" class="tour-overlay hidden">
+        <div id="tourSpotlight" class="tour-spotlight"></div>
+        <div id="tourCard" class="tour-card">
+          <p id="tourStep" class="eyebrow"></p>
+          <h3 id="tourTitle"></h3>
+          <p id="tourText"></p>
+          <button id="tourNext" class="primary">下一步</button>
+        </div>
+      </div>
 
       <div id="modal" class="modal hidden">
         <div class="modal-card">
@@ -103,6 +136,6 @@
         </div>
       </div>
     </main>
-    <script src="./main.js?v=20260627-005"></script>
+    <script src="./main.js?v=20260628-event-007"></script>
   </body>
 </html>

@@ -5,7 +5,12 @@ const state = {
   authMode: "login",
   user: null,
   cards: [],
-  series: []
+  series: [],
+  challenge: null,
+  introTimer: null,
+  introCountdownTimer: null,
+  tourIndex: 0,
+  tourSteps: []
 };
 
 const $ = selector => document.querySelector(selector);
@@ -28,6 +33,158 @@ async function request(path, options = {}) {
 function toast(message) {
   $("#modalContent").innerHTML = `<div class="message">${message}</div>`;
   $("#modal").classList.remove("hidden");
+}
+
+function introKey() {
+  return state.user ? `gz_intro_seen_${state.user.id}` : "gz_intro_seen";
+}
+
+function tourKey() {
+  return state.user ? `gz_tour_seen_${state.user.id}` : "gz_tour_seen";
+}
+
+function maybeStartOnboarding() {
+  if (!state.user) return;
+  if (!localStorage.getItem(introKey())) {
+    setTimeout(startIntro, 150);
+    return;
+  }
+  if (!localStorage.getItem(tourKey())) setTimeout(startTour, 150);
+}
+
+function startIntro() {
+  const scenes = [
+    {
+      title: "宇宙深处，有一座殿堂",
+      text: "它由无数玩家的笑声、怒吼、叹息和尖叫堆砌而成，名字叫作「名场面之殿」。"
+    },
+    {
+      title: "这里只有永恒的一瞬间",
+      text: "一次离谱的翻盘，一句传遍社区的梗，一个让策划连夜发道歉信的 BUG，都像星辰一样漂浮在穹顶之上。"
+    },
+    {
+      title: "你是被选中的拾忆者",
+      text: "每打开一枚记忆晶核，你就从时间的尘埃中捞回一个值得被记住的瞬间。"
+    },
+    {
+      title: "名场面之柱正在等待你的名字",
+      text: "殿堂深处的石柱刻满先行者的名字，而你，刚刚推开了那扇门。"
+    }
+  ];
+  let sceneIndex = 0;
+  let skipCountdown = 3;
+  const overlay = $("#introOverlay");
+  const skip = $("#introSkip");
+  overlay.classList.remove("hidden");
+  skip.disabled = true;
+  skip.textContent = "3 秒后可跳过";
+
+  const renderScene = () => {
+    const scene = scenes[Math.min(sceneIndex, scenes.length - 1)];
+    $("#introTitle").textContent = scene.title;
+    $("#introText").textContent = scene.text;
+  };
+
+  renderScene();
+  state.introCountdownTimer = setInterval(() => {
+    skipCountdown -= 1;
+    if (skipCountdown > 0) {
+      skip.textContent = `${skipCountdown} 秒后可跳过`;
+      return;
+    }
+    clearInterval(state.introCountdownTimer);
+    state.introCountdownTimer = null;
+    skip.disabled = false;
+    skip.textContent = "跳过";
+  }, 1000);
+
+  const sceneTimer = setInterval(() => {
+    sceneIndex += 1;
+    renderScene();
+  }, 3600);
+
+  state.introTimer = setTimeout(() => finishIntro(sceneTimer), 15000);
+  skip.onclick = () => {
+    if (!skip.disabled) finishIntro(sceneTimer);
+  };
+}
+
+function finishIntro(sceneTimer = null) {
+  if (sceneTimer) clearInterval(sceneTimer);
+  if (state.introTimer) clearTimeout(state.introTimer);
+  if (state.introCountdownTimer) clearInterval(state.introCountdownTimer);
+  state.introTimer = null;
+  state.introCountdownTimer = null;
+  localStorage.setItem(introKey(), "1");
+  $("#introOverlay").classList.add("hidden");
+  startTour();
+}
+
+function buildTourSteps() {
+  return [
+    { key: "event", title: "今日事件", text: "先处理策划事件。每次三选一，会改变热度、口碑、碎片或抽卡次数。你每天最多处理 3 个事件。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。可以通过事件奖励、积分档位、累计开包返还、分享和时间恢复获得。" },
+    { key: "heat", title: "热度", text: "热度代表活动传播声量。更会制造话题的选择会提高热度，也会帮助你冲排行榜。" },
+    { key: "reputation", title: "口碑", text: "口碑代表玩家信任。透明沟通、降低负担、尊重体验通常会提高口碑。口碑太低会影响结局评价。" },
+    { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
+    { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡、处理事件获得热度和口碑，都会提升积分。达到积分档位还会奖励抽卡次数。" },
+    { key: "pack", title: "记忆晶核", text: "这里开包抽取名场面卡。累计开包达到指定数量，会返还额外抽卡次数。" },
+    { key: "album", title: "卡册", text: "卡册用于查看已收录卡牌，也可以用碎片兑换未解锁卡。部分卡牌会触发被动效果。" },
+    { key: "rank", title: "排行榜", text: "排行榜主要按积分排序。想提升排行，就多处理事件、积累热度和口碑、收集高价值卡牌。" }
+  ];
+}
+
+function showPage(pageId) {
+  $$(".tab").forEach(item => item.classList.toggle("active", item.dataset.page === pageId));
+  $$(".page").forEach(page => page.classList.toggle("active", page.id === pageId));
+  if (pageId === "rankPage") loadRanking();
+}
+
+function startTour(force = false) {
+  if (!state.user || (!force && localStorage.getItem(tourKey()))) return;
+  showPage("homePage");
+  $("#modal").classList.add("hidden");
+  state.tourSteps = buildTourSteps();
+  state.tourIndex = 0;
+  $("#tourOverlay").classList.remove("hidden");
+  renderTourStep();
+}
+
+function renderTourStep() {
+  const step = state.tourSteps[state.tourIndex];
+  const target = document.querySelector(`[data-tour="${step.key}"]`);
+  if (!step || !target) return finishTour();
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => {
+    const rect = target.getBoundingClientRect();
+    const pad = 8;
+    const spotlight = $("#tourSpotlight");
+    spotlight.style.left = `${Math.max(8, rect.left - pad)}px`;
+    spotlight.style.top = `${Math.max(8, rect.top - pad)}px`;
+    spotlight.style.width = `${Math.min(window.innerWidth - 16, rect.width + pad * 2)}px`;
+    spotlight.style.height = `${rect.height + pad * 2}px`;
+
+    const card = $("#tourCard");
+    const placeBelow = rect.top < window.innerHeight * 0.52;
+    card.style.top = placeBelow ? `${Math.min(window.innerHeight - 190, rect.bottom + 18)}px` : "auto";
+    card.style.bottom = placeBelow ? "auto" : `${Math.min(window.innerHeight - 190, window.innerHeight - rect.top + 18)}px`;
+
+    $("#tourStep").textContent = `${state.tourIndex + 1}/${state.tourSteps.length}`;
+    $("#tourTitle").textContent = step.title;
+    $("#tourText").textContent = step.text;
+    $("#tourNext").textContent = state.tourIndex === state.tourSteps.length - 1 ? "完成指引" : "下一步";
+  }, 260);
+}
+
+function nextTourStep() {
+  state.tourIndex += 1;
+  if (state.tourIndex >= state.tourSteps.length) return finishTour();
+  renderTourStep();
+}
+
+function finishTour() {
+  localStorage.setItem(tourKey(), "1");
+  $("#tourOverlay").classList.add("hidden");
 }
 
 function rewardHtml(rewards = []) {
@@ -84,6 +241,7 @@ function showSharePoster(scene, shareId) {
     rank: "晒出我的排行榜战绩",
     card: "炫耀刚抽到的稀有卡"
   }[scene] || "分享光仔卡牌";
+  const shareUrl = shareLink(shareId);
   $("#modalContent").innerHTML = `
     <div class="share-card-preview">
       <p class="eyebrow">分享卡片预览</p>
@@ -95,9 +253,95 @@ function showSharePoster(scene, shareId) {
       <p>我在光仔卡牌里打开了名场面之殿，来一起抽一包。</p>
       <small>分享码：${shareId}</small>
     </div>
-    <p class="message">演示版会在进入分享页后检测跳转，并给分享者发放奖励。</p>
-    <button class="primary" onclick="openPoster('${shareId}')">生成二维码海报</button>
-    <button class="secondary" onclick="goShare('${shareId}')">直接模拟跳转领奖</button>
+    <p class="message">点击立即转发会调用手机系统分享面板。好友打开链接后，会记录一次分享跳转并发放奖励。</p>
+    <div class="share-actions">
+      <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">立即转发给好友</button>
+      <button class="secondary" onclick="openPoster('${shareId}')">生成二维码海报</button>
+      <button class="secondary" onclick="copyShareLink('${shareId}')">复制分享链接</button>
+    </div>
+    <p class="share-link-text">${shareUrl}</p>
+  `;
+  $("#modal").classList.remove("hidden");
+}
+
+function shareLink(shareId) {
+  return new URL(`./share.html?shareId=${encodeURIComponent(shareId)}`, window.location.href).href;
+}
+
+async function copyShareLink(shareId) {
+  const url = shareLink(shareId);
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("分享链接已复制，可以粘贴发给好友。");
+  } catch {
+    window.prompt("复制这个分享链接", url);
+  }
+}
+
+async function nativeShare(shareId, scene = "invite") {
+  const title = {
+    invite: "来光仔卡牌收集名场面",
+    rank: "我在光仔卡牌冲榜了",
+    card: "我抽到了光仔卡牌名场面"
+  }[scene] || "光仔卡牌";
+  const url = shareLink(shareId);
+  const payload = {
+    title,
+    text: "推开名场面之殿，开一枚记忆晶核，看看你能捞回哪个游戏瞬间。",
+    url
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  await copyShareLink(shareId);
+}
+
+function showHelpGuide() {
+  $("#modalContent").innerHTML = `
+    <div class="guide">
+      <p class="eyebrow">玩法说明</p>
+      <h3>拾忆者行动手册</h3>
+      <p class="guide-lead">你的目标是处理策划事件，积累热度、口碑和积分，获得抽卡机会，解锁更多名场面卡牌，并冲上名场面之柱排行榜。</p>
+      <div class="guide-grid">
+        <div>
+          <strong>抽卡次数</strong>
+          <p>用于开启记忆晶核。可通过今日事件、积分档位、累计开包返还、分享跳转和时间恢复获得。</p>
+        </div>
+        <div>
+          <strong>热度</strong>
+          <p>代表话题传播声量。热度越高，说明你的运营选择越容易被玩家讨论和转发。</p>
+        </div>
+        <div>
+          <strong>口碑</strong>
+          <p>代表玩家信任。透明沟通、降低负担、尊重体验会提高口碑，口碑太低会影响结局评价。</p>
+        </div>
+        <div>
+          <strong>碎片</strong>
+          <p>用于在卡册兑换未解锁卡牌。抽到重复卡时，也会自动转化为碎片。</p>
+        </div>
+        <div>
+          <strong>积分</strong>
+          <p>排行榜核心指标。抽到新卡、处理事件、积累热度和口碑都会提高积分。</p>
+        </div>
+        <div>
+          <strong>卡牌效果</strong>
+          <p>部分名场面卡不是只收藏，会触发额外效果，例如补偿碎片、失败兜底或额外抽卡。</p>
+        </div>
+      </div>
+      <div class="guide-ranking">
+        <strong>排行榜怎么算？</strong>
+        <p>排行榜主要按积分排序。想提升排名，就多处理今日事件、获取抽卡次数、解锁高价值卡牌，并利用碎片补齐卡册。</p>
+      </div>
+      <div class="guide-ranking">
+        <strong>抽卡次数怎么变多？</strong>
+        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位会奖励抽卡；累计开包达到指定数量也会返还抽卡次数。</p>
+      </div>
+    </div>
   `;
   $("#modal").classList.remove("hidden");
 }
@@ -120,7 +364,15 @@ async function loadCards() {
 async function loadProfile() {
   const data = await request("/api/profile");
   state.user = data.user;
+  await loadChallenge();
   render();
+}
+
+async function loadChallenge() {
+  if (!state.token) return;
+  const data = await request("/api/challenge");
+  state.challenge = data.challenge;
+  state.user = data.user;
 }
 
 function render() {
@@ -133,13 +385,67 @@ function render() {
   $("#gameView").classList.remove("hidden");
   $("#nicknameText").textContent = state.user.nickname;
   $("#drawChances").textContent = state.user.drawChances;
+  $("#heat").textContent = state.user.heat || 0;
+  $("#reputation").textContent = state.user.reputation || 0;
   $("#score").textContent = state.user.score;
   $("#fragments").textContent = state.user.fragments;
   $("#collection").textContent = `${Object.keys(state.user.ownedCards).length}/${state.cards.length}`;
   renderTasks();
+  renderChallenge();
   renderSeriesGoals();
   renderAlbum();
-  loadRanking();
+  if ($("#rankPage").classList.contains("active")) loadRanking();
+}
+
+function rewardText(rewards = {}) {
+  return [
+    rewards.heat ? `热度 ${rewards.heat > 0 ? "+" : ""}${rewards.heat}` : "",
+    rewards.reputation ? `口碑 ${rewards.reputation > 0 ? "+" : ""}${rewards.reputation}` : "",
+    rewards.fragments ? `碎片 +${rewards.fragments}` : "",
+    rewards.drawChances ? `抽卡 +${rewards.drawChances}` : ""
+  ].filter(Boolean).join(" · ");
+}
+
+function renderChallenge() {
+  const challenge = state.challenge;
+  if (!challenge) {
+    $("#challengeProgress").textContent = "-";
+    $("#challengeBox").innerHTML = `<p class="message">事件加载中...</p>`;
+    return;
+  }
+  $("#challengeProgress").textContent = `${challenge.todayCount}/${challenge.maxDaily}`;
+  if (challenge.completed) {
+    $("#challengeBox").innerHTML = `
+      <div class="challenge-done">
+        <strong>今日事件已处理完</strong>
+        <p>${state.user.plannerTitle}：${state.user.endingText}</p>
+      </div>
+      ${challenge.recentChoices.map(item => `
+        <div class="choice-log">
+          <small>${item.eventTitle}</small>
+          <strong>${item.choiceText}</strong>
+          <span>${rewardText(item.rewards)}</span>
+        </div>
+      `).join("")}
+    `;
+    return;
+  }
+  const event = challenge.event;
+  $("#challengeBox").innerHTML = `
+    <div class="challenge-card">
+      <p class="eyebrow">剩余 ${challenge.remaining} 次处理机会</p>
+      <h4>${event.title}</h4>
+      <p>${event.context}</p>
+      <div class="choice-list">
+        ${event.choices.map((choice, index) => `
+          <button class="choice-button" onclick="chooseChallenge('${event.id}', '${choice.id}')">
+            <b>${String.fromCharCode(65 + index)}</b>
+            <span>${choice.text}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderTasks() {
@@ -274,6 +580,40 @@ async function exchangeCard(cardId) {
   }
 }
 
+async function chooseChallenge(eventId, choiceId) {
+  try {
+    const data = await request("/api/challenge/choose", {
+      method: "POST",
+      body: JSON.stringify({ eventId, choiceId })
+    });
+    state.user = data.user;
+    state.challenge = data.challenge;
+    render();
+    const outcome = data.outcome;
+    $("#modalContent").innerHTML = `
+      <div class="challenge-result">
+        <p class="eyebrow">事件处理结果</p>
+        <h3>${outcome.eventTitle}</h3>
+        <strong>${outcome.choiceText}</strong>
+        <p>${outcome.result}</p>
+        <div class="reward-chips">
+          ${rewardText(outcome.rewards).split(" · ").filter(Boolean).map(text => `<span>${text}</span>`).join("")}
+        </div>
+        ${outcome.effects.length ? `
+          <div class="effect-list">
+            <strong>卡牌效果触发</strong>
+            ${outcome.effects.map(text => `<p>${text}</p>`).join("")}
+          </div>
+        ` : ""}
+        ${rewardHtml(data.rewards || [])}
+      </div>
+    `;
+    $("#modal").classList.remove("hidden");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 async function shareScene(scene) {
   try {
     const data = await request("/api/share/create", {
@@ -288,7 +628,12 @@ async function shareScene(scene) {
 
 window.exchangeCard = exchangeCard;
 window.showCardDetail = showCardDetail;
+window.chooseChallenge = chooseChallenge;
+window.nextTourStep = nextTourStep;
+window.finishTour = finishTour;
 window.shareScene = shareScene;
+window.nativeShare = nativeShare;
+window.copyShareLink = copyShareLink;
 window.goShare = shareId => {
   window.location.href = `./share.html?shareId=${encodeURIComponent(shareId)}`;
 };
@@ -307,7 +652,9 @@ async function submitAuth() {
     state.token = data.token;
     state.user = data.user;
     localStorage.setItem("gz_token", state.token);
+    await loadChallenge();
     render();
+    maybeStartOnboarding();
   } catch (error) {
     $("#authMessage").textContent = error.message;
   }
@@ -366,19 +713,17 @@ function bind() {
   $("#shareRankBtn").addEventListener("click", () => shareScene("rank"));
   $("#albumSeries").addEventListener("change", renderAlbum);
   $("#closeModal").addEventListener("click", () => $("#modal").classList.add("hidden"));
+  $("#tourNext").addEventListener("click", nextTourStep);
+  $("#helpBtn").addEventListener("click", showHelpGuide);
   $("#logoutBtn").addEventListener("click", () => {
     localStorage.removeItem("gz_token");
     state.token = "";
     state.user = null;
+    state.challenge = null;
     render();
   });
   $$(".tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      $$(".tab").forEach(item => item.classList.remove("active"));
-      $$(".page").forEach(page => page.classList.remove("active"));
-      tab.classList.add("active");
-      $(`#${tab.dataset.page}`).classList.add("active");
-    });
+    tab.addEventListener("click", () => showPage(tab.dataset.page));
   });
 }
 
@@ -389,6 +734,7 @@ async function init() {
   if (state.token) {
     try {
       await loadProfile();
+      maybeStartOnboarding();
     } catch {
       localStorage.removeItem("gz_token");
       state.token = "";
