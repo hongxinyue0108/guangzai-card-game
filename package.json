@@ -6,6 +6,10 @@
     "start": "node backend/server.js",
     "dev": "HOST=127.0.0.1 PORT=8787 node backend/server.js"
   },
+  "dependencies": {
+    "mysql2": "^3.11.5",
+    "redis": "^4.7.0"
+  },
   "engines": {
     "node": ">=18"
   }

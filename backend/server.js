@@ -10,13 +10,31 @@ loadEnv(path.join(ROOT_DIR, ".env"));
 loadEnv(path.join(__dirname, ".env"));
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
+const MYSQL_CONFIG = {
+  host: process.env.MYSQL_HOST || "",
+  port: Number(process.env.MYSQL_PORT || 3306),
+  user: process.env.MYSQL_USER || "",
+  password: process.env.MYSQL_PASSWORD || "",
+  database: process.env.MYSQL_DATABASE || "",
+  waitForConnections: true,
+  connectionLimit: Number(process.env.MYSQL_CONNECTION_LIMIT || 20),
+  queueLimit: 0,
+  charset: "utf8mb4"
+};
+const USE_MYSQL = Boolean(MYSQL_CONFIG.host && MYSQL_CONFIG.user && MYSQL_CONFIG.database);
+const REDIS_URL = process.env.REDIS_URL || "";
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const MAX_DRAW_CHANCES = 15;
 const DRAW_RECOVERY_INTERVAL_MS = 30 * 60 * 1000;
 const TOKEN_CACHE_TTL_MS = 2 * 60 * 1000;
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+const RANKING_CACHE_TTL_SECONDS = 8;
 const tokenUserCache = new Map();
+let mysqlPool = null;
+let redisClient = null;
+let redisReady = false;
 const SCORE_MILESTONES = [
   { score: 100, drawChances: 1, text: "积分达到 100，奖励 1 次抽卡" },
   { score: 260, drawChances: 1, fragments: 20, text: "积分达到 260，奖励 1 次抽卡 + 20 碎片" },
@@ -282,6 +300,376 @@ async function supabaseFetch(table, options = {}) {
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
+}
+
+async function mysql() {
+  if (!mysqlPool) {
+    const mysql2 = require("mysql2/promise");
+    mysqlPool = mysql2.createPool(MYSQL_CONFIG);
+  }
+  return mysqlPool;
+}
+
+async function mysqlQuery(sql, params = []) {
+  const pool = await mysql();
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+}
+
+async function redis() {
+  if (!REDIS_URL) return null;
+  if (redisReady) return redisClient;
+  if (!redisClient) {
+    const { createClient } = require("redis");
+    redisClient = createClient({ url: REDIS_URL });
+    redisClient.on("error", error => {
+      redisReady = false;
+      console.error("redis error:", error.message);
+    });
+  }
+  try {
+    await redisClient.connect();
+    redisReady = true;
+    return redisClient;
+  } catch (error) {
+    console.error("redis connect failed:", error.message);
+    return null;
+  }
+}
+
+async function redisGet(key) {
+  const client = await redis();
+  if (!client) return null;
+  try {
+    return client.get(key);
+  } catch {
+    return null;
+  }
+}
+
+async function redisSet(key, value, ttlSeconds = null) {
+  const client = await redis();
+  if (!client) return false;
+  try {
+    if (ttlSeconds) await client.set(key, value, { EX: ttlSeconds });
+    else await client.set(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function redisDel(key) {
+  const client = await redis();
+  if (!client) return false;
+  try {
+    await client.del(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseJsonValue(value, fallback = {}) {
+  if (value == null) return fallback;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function sqlDate(value = new Date()) {
+  return new Date(value).toISOString().slice(0, 23).replace("T", " ");
+}
+
+function isoDate(value) {
+  if (!value) return new Date().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return new Date(value).toISOString();
+}
+
+function mysqlRowToUser(row) {
+  if (!row) return null;
+  const user = {
+    id: row.id,
+    nickname: row.nickname,
+    passwordHash: row.password_hash,
+    score: row.score,
+    fragments: row.fragments,
+    heat: row.heat,
+    reputation: row.reputation,
+    drawChances: row.draw_chances,
+    lastRecoveredAt: isoDate(row.last_recovered_at),
+    openedPacks: row.opened_packs,
+    ownedCards: parseJsonValue(row.owned_cards, {}),
+    shareRewards: parseJsonValue(row.share_rewards, {}),
+    taskRewards: parseJsonValue(row.task_rewards, {}),
+    seriesRewards: parseJsonValue(row.series_rewards, {}),
+    milestoneRewards: parseJsonValue(row.milestone_rewards, { score: {}, packs: {} }),
+    challengeState: parseJsonValue(row.challenge_state, {}),
+    effectState: parseJsonValue(row.effect_state, {})
+  };
+  ensureUserShape(user);
+  return user;
+}
+
+function mysqlDrawRecord(row) {
+  return {
+    id: row.id,
+    userId: row.player_id,
+    nickname: row.nickname,
+    cardId: row.card_id,
+    cardName: row.card_name,
+    series: row.series,
+    rarity: row.rarity,
+    rarityName: row.rarity_name,
+    duplicated: Boolean(row.duplicated),
+    scoreGained: row.score_gained,
+    fragmentsGained: row.fragments_gained,
+    createdAt: isoDate(row.created_at)
+  };
+}
+
+function mysqlEvent(row) {
+  const payload = parseJsonValue(row.payload, {});
+  return {
+    id: row.id,
+    type: row.type,
+    userId: row.player_id,
+    ownerId: payload.ownerId || row.player_id,
+    shareId: row.share_id,
+    cardId: row.card_id,
+    scene: row.scene,
+    duplicated: row.duplicated == null ? null : Boolean(row.duplicated),
+    rewarded: row.rewarded == null ? null : Boolean(row.rewarded),
+    createdAt: isoDate(row.created_at),
+    payload
+  };
+}
+
+async function getMysqlPlayerByNickname(nickname) {
+  const rows = await mysqlQuery("select * from players where nickname = ? limit 1", [nickname]);
+  return mysqlRowToUser(rows[0]);
+}
+
+async function getMysqlPlayerById(userId) {
+  const rows = await mysqlQuery("select * from players where id = ? limit 1", [userId]);
+  return mysqlRowToUser(rows[0]);
+}
+
+async function updateMysqlPlayer(user) {
+  ensureUserShape(user);
+  await mysqlQuery(
+    `insert into players (
+      id, nickname, password_hash, score, fragments, heat, reputation,
+      draw_chances, last_recovered_at, opened_packs, owned_cards, share_rewards,
+      task_rewards, series_rewards, milestone_rewards, challenge_state, effect_state
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    on duplicate key update
+      nickname = values(nickname),
+      password_hash = values(password_hash),
+      score = values(score),
+      fragments = values(fragments),
+      heat = values(heat),
+      reputation = values(reputation),
+      draw_chances = values(draw_chances),
+      last_recovered_at = values(last_recovered_at),
+      opened_packs = values(opened_packs),
+      owned_cards = values(owned_cards),
+      share_rewards = values(share_rewards),
+      task_rewards = values(task_rewards),
+      series_rewards = values(series_rewards),
+      milestone_rewards = values(milestone_rewards),
+      challenge_state = values(challenge_state),
+      effect_state = values(effect_state)`,
+    [
+      user.id,
+      user.nickname,
+      user.passwordHash,
+      user.score,
+      user.fragments,
+      user.heat,
+      user.reputation,
+      user.drawChances,
+      sqlDate(user.lastRecoveredAt),
+      user.openedPacks,
+      JSON.stringify(user.ownedCards || {}),
+      JSON.stringify(user.shareRewards || {}),
+      JSON.stringify(user.taskRewards || {}),
+      JSON.stringify(user.seriesRewards || {}),
+      JSON.stringify(user.milestoneRewards || { score: {}, packs: {} }),
+      JSON.stringify(user.challengeState || {}),
+      JSON.stringify(user.effectState || {})
+    ]
+  );
+}
+
+async function setMysqlSession(token, userId) {
+  const stored = await redisSet(`session:${token}`, userId, SESSION_TTL_SECONDS);
+  if (!stored) {
+    await mysqlQuery(
+      `insert into sessions (token, player_id, expires_at)
+       values (?, ?, ?)
+       on duplicate key update player_id = values(player_id), expires_at = values(expires_at)`,
+      [token, userId, sqlDate(Date.now() + SESSION_TTL_SECONDS * 1000)]
+    );
+  }
+}
+
+async function getMysqlUserByToken(req) {
+  const token = bearerToken(req);
+  if (!token) return null;
+  const cached = cachedUser(token);
+  if (cached) return cached;
+  let userId = await redisGet(`session:${token}`);
+  if (!userId) {
+    const rows = await mysqlQuery(
+      "select player_id from sessions where token = ? and expires_at > now(3) limit 1",
+      [token]
+    );
+    userId = rows[0]?.player_id;
+  }
+  const user = userId ? await getMysqlPlayerById(userId) : null;
+  cacheUser(token, user);
+  return user;
+}
+
+async function insertMysqlEvent(event) {
+  await mysqlQuery(
+    `insert into events (id, type, player_id, share_id, card_id, scene, duplicated, rewarded, payload, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      event.id || id("evt"),
+      event.type,
+      event.userId || event.ownerId || null,
+      event.shareId || null,
+      event.cardId || null,
+      event.scene || null,
+      event.duplicated == null ? null : Number(Boolean(event.duplicated)),
+      event.rewarded == null ? null : Number(Boolean(event.rewarded)),
+      JSON.stringify({ ...(event.payload || {}), ownerId: event.ownerId || event.payload?.ownerId }),
+      sqlDate(event.createdAt || new Date())
+    ]
+  );
+}
+
+function queueMysqlEvent(event) {
+  insertMysqlEvent(event).catch(error => {
+    console.error("mysql event insert failed:", error.message);
+  });
+}
+
+async function insertMysqlDrawRecord(record) {
+  await mysqlQuery(
+    `insert into draw_records (
+      id, player_id, nickname, card_id, card_name, series, rarity, rarity_name,
+      duplicated, score_gained, fragments_gained, created_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      record.id,
+      record.userId,
+      record.nickname,
+      record.cardId,
+      record.cardName,
+      record.series,
+      record.rarity,
+      record.rarityName,
+      Number(Boolean(record.duplicated)),
+      record.scoreGained,
+      record.fragmentsGained,
+      sqlDate(record.createdAt)
+    ]
+  );
+}
+
+async function getMysqlRecentDrawRecords(userId, limit = 20) {
+  const rows = await mysqlQuery(
+    "select * from draw_records where player_id = ? order by created_at desc limit ?",
+    [userId, Number(limit)]
+  );
+  return rows.map(mysqlDrawRecord);
+}
+
+async function getMysqlTodayUserEvents(userId) {
+  const rows = await mysqlQuery(
+    "select * from events where player_id = ? and created_at >= ? order by created_at asc",
+    [userId, `${today()} 00:00:00.000`]
+  );
+  return rows.map(mysqlEvent);
+}
+
+async function mysqlUserView(user, includeDrawRecords = false) {
+  const [drawRecords, events] = await Promise.all([
+    includeDrawRecords ? getMysqlRecentDrawRecords(user.id) : Promise.resolve([]),
+    getMysqlTodayUserEvents(user.id)
+  ]);
+  return userView(user, { drawRecords, events });
+}
+
+async function getMysqlShareById(shareId) {
+  const rows = await mysqlQuery("select * from shares where id = ? limit 1", [shareId]);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.player_id,
+    nickname: row.nickname,
+    scene: row.scene,
+    visits: row.visits,
+    rewarded: Boolean(row.rewarded),
+    createdAt: isoDate(row.created_at)
+  };
+}
+
+async function upsertMysqlShare(share) {
+  await mysqlQuery(
+    `insert into shares (id, player_id, nickname, scene, visits, rewarded, created_at)
+     values (?, ?, ?, ?, ?, ?, ?)
+     on duplicate key update visits = values(visits), rewarded = values(rewarded)`,
+    [
+      share.id,
+      share.userId,
+      share.nickname,
+      share.scene,
+      share.visits,
+      Number(Boolean(share.rewarded)),
+      sqlDate(share.createdAt)
+    ]
+  );
+}
+
+async function getMysqlRankingRows() {
+  const cached = await redisGet("ranking:v1");
+  if (cached) return JSON.parse(cached);
+  const rows = await mysqlQuery(
+    "select id, nickname, score, heat, reputation, owned_cards from players order by score desc limit 50"
+  );
+  const playerRows = rows.map(row => {
+    const user = mysqlRowToUser(row);
+    return {
+      player: true,
+      userId: row.id,
+      nickname: row.nickname,
+      score: row.score || 0,
+      heat: row.heat || 0,
+      reputation: row.reputation || 0,
+      title: plannerTitle(user),
+      collected: Object.keys(parseJsonValue(row.owned_cards, {})).length,
+      total: CARDS.length
+    };
+  });
+  const ranking = [...playerRows, ...NPC_RANKING.map(npc => ({ ...npc, total: CARDS.length, player: false }))]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50)
+    .map((row, index) => ({ rank: index + 1, ...row }));
+  await redisSet("ranking:v1", JSON.stringify(ranking), RANKING_CACHE_TTL_SECONDS);
+  return ranking;
+}
+
+async function invalidateRankingCache() {
+  await redisDel("ranking:v1");
 }
 
 async function readSupabaseDb() {
@@ -1071,6 +1459,313 @@ function applyMilestoneRewards(user) {
   return rewards;
 }
 
+async function handleMySQL(req, res, url) {
+  try {
+    if (req.method === "GET" && url.pathname === "/api/cards") {
+      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/register") {
+      const body = await parseBody(req);
+      const password = String(body.password || "");
+      const nickname = normalizeAccount(body.nickname || body.username);
+      if (!/^[a-z0-9_\u4e00-\u9fa5]{2,18}$/i.test(nickname) || password.length < 3) {
+        return json(res, 400, { message: "账号需 2-18 位，可用中文、字母、数字、下划线；密码至少 3 位" });
+      }
+      if (await getMysqlPlayerByNickname(nickname)) {
+        return json(res, 409, { message: "这个名字已经被注册了，要不再换一个捏" });
+      }
+      const user = {
+        id: id("usr"),
+        passwordHash: hash(password),
+        nickname,
+        score: 0,
+        fragments: 0,
+        heat: 0,
+        reputation: 0,
+        drawChances: 3,
+        lastRecoveredAt: new Date().toISOString(),
+        openedPacks: 0,
+        ownedCards: {},
+        shareRewards: {},
+        taskRewards: {},
+        seriesRewards: {},
+        milestoneRewards: { score: {}, packs: {} },
+        challengeState: {},
+        effectState: {}
+      };
+      const token = id("tok");
+      await updateMysqlPlayer(user);
+      await setMysqlSession(token, user.id);
+      cacheUser(token, user);
+      queueMysqlEvent({ type: "register", userId: user.id });
+      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/login") {
+      const body = await parseBody(req);
+      const nickname = normalizeAccount(body.nickname || body.username);
+      const user = await getMysqlPlayerByNickname(nickname);
+      if (!user || user.passwordHash !== hash(String(body.password || ""))) {
+        return json(res, 401, { message: "账号或密码错误" });
+      }
+      const token = id("tok");
+      const recovered = recoverDrawChances(user);
+      if (recovered) await updateMysqlPlayer(user);
+      await setMysqlSession(token, user.id);
+      cacheUser(token, user);
+      queueMysqlEvent({ type: "login", userId: user.id });
+      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/profile") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      const events = await getMysqlTodayUserEvents(user.id);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      if (recovered || rewards.length) {
+        await updateMysqlPlayer(user);
+        await invalidateRankingCache();
+      }
+      return json(res, 200, { user: await mysqlUserView(user, true), rewards });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/challenge") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      if (recovered) await updateMysqlPlayer(user);
+      return json(res, 200, { challenge: challengeSummary(user), user: await mysqlUserView(user) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/challenge/choose") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      const state = todayChallengeState(user);
+      if (state.count >= MAX_DAILY_CHALLENGES) return json(res, 400, { message: "今日事件已处理完" });
+      const event = currentChallenge(user);
+      const body = await parseBody(req);
+      if (!event || body.eventId !== event.id) return json(res, 409, { message: "事件已刷新，请重试" });
+      const choice = event.choices.find(item => item.id === body.choiceId);
+      if (!choice) return json(res, 404, { message: "选项不存在" });
+      const outcome = applyChallengeRewards(user, { ...choice.rewards });
+      const entry = {
+        id: id("chg"),
+        eventId: event.id,
+        eventTitle: event.title,
+        choiceId: choice.id,
+        choiceText: choice.text,
+        result: choice.result,
+        rewards: outcome.rewards,
+        effects: outcome.effects,
+        createdAt: new Date().toISOString()
+      };
+      state.count += 1;
+      state.choices.push(entry);
+      const challengeEvent = { type: "challenge", userId: user.id, scene: event.id, payload: entry, createdAt: entry.createdAt };
+      queueMysqlEvent(challengeEvent);
+      const events = await getMysqlTodayUserEvents(user.id);
+      events.push(challengeEvent);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updateMysqlPlayer(user);
+      await invalidateRankingCache();
+      return json(res, 200, {
+        outcome: entry,
+        rewards,
+        challenge: challengeSummary(user),
+        user: userView(user, { drawRecords: [], events })
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/draw") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      if (user.drawChances <= 0) return json(res, 400, { message: "抽卡次数不足" });
+      const card = weightedCard();
+      user.drawChances -= 1;
+      user.openedPacks += 1;
+      const oldCount = user.ownedCards[card.id] || 0;
+      let result;
+      if (oldCount > 0) {
+        user.ownedCards[card.id] = oldCount + 1;
+        user.fragments += card.fragment;
+        result = { duplicated: true, fragmentsGained: card.fragment, scoreGained: 0 };
+      } else {
+        user.ownedCards[card.id] = 1;
+        user.score += card.score;
+        result = { duplicated: false, fragmentsGained: 0, scoreGained: card.score };
+      }
+      const drawRecord = {
+        id: id("draw"),
+        userId: user.id,
+        nickname: user.nickname,
+        cardId: card.id,
+        cardName: card.name,
+        series: card.series,
+        rarity: card.rarity,
+        rarityName: card.rarityName,
+        duplicated: result.duplicated,
+        scoreGained: result.scoreGained,
+        fragmentsGained: result.fragmentsGained,
+        createdAt: new Date().toISOString()
+      };
+      const drawEvent = {
+        type: "draw",
+        userId: user.id,
+        cardId: card.id,
+        duplicated: result.duplicated,
+        createdAt: new Date().toISOString()
+      };
+      const [events] = await Promise.all([
+        getMysqlTodayUserEvents(user.id),
+        insertMysqlDrawRecord(drawRecord)
+      ]);
+      queueMysqlEvent(drawEvent);
+      events.push(drawEvent);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updateMysqlPlayer(user);
+      await invalidateRankingCache();
+      return json(res, 200, { card, result, drawRecord, rewards, user: userView(user, { drawRecords: [drawRecord], events }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/exchange") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      recoverDrawChances(user);
+      const body = await parseBody(req);
+      const card = CARDS.find(item => item.id === body.cardId);
+      if (!card) return json(res, 404, { message: "卡牌不存在" });
+      if (user.ownedCards[card.id]) return json(res, 400, { message: "你已经拥有这张卡" });
+      if (user.fragments < card.price) return json(res, 400, { message: "碎片不足" });
+      user.fragments -= card.price;
+      user.ownedCards[card.id] = 1;
+      user.score += card.score;
+      queueMysqlEvent({ type: "exchange", userId: user.id, cardId: card.id });
+      const events = await getMysqlTodayUserEvents(user.id);
+      const rewards = [
+        ...applyDailyTasks(user, { events, drawRecords: [] }),
+        ...applySeriesRewards(user),
+        ...applyMilestoneRewards(user)
+      ];
+      await updateMysqlPlayer(user);
+      await invalidateRankingCache();
+      return json(res, 200, { card, rewards, user: userView(user, { drawRecords: [], events }) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/share/create") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const recovered = recoverDrawChances(user);
+      const body = await parseBody(req);
+      const scene = String(body.scene || "invite");
+      const share = {
+        id: id("shr"),
+        userId: user.id,
+        nickname: user.nickname,
+        scene,
+        visits: 0,
+        rewarded: false,
+        createdAt: new Date().toISOString()
+      };
+      await upsertMysqlShare(share);
+      queueMysqlEvent({ type: "share_create", userId: user.id, shareId: share.id, scene });
+      if (recovered) await updateMysqlPlayer(user);
+      return json(res, 200, { share, shareUrl: `../frontend/share.html?shareId=${share.id}` });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/share/visit") {
+      const body = await parseBody(req);
+      const share = await getMysqlShareById(String(body.shareId || ""));
+      if (!share) return json(res, 404, { message: "分享不存在" });
+      const owner = await getMysqlPlayerById(share.userId);
+      if (!owner) return json(res, 404, { message: "分享者不存在" });
+      recoverDrawChances(owner);
+      share.visits += 1;
+      let reward = null;
+      const key = `${today()}:${share.scene}`;
+      if (!owner.shareRewards[key]) owner.shareRewards[key] = 0;
+      if (owner.shareRewards[key] < 1) {
+        owner.shareRewards[key] += 1;
+        addDrawChances(owner, 1);
+        share.rewarded = true;
+        reward = { drawChances: 1, message: "分享跳转奖励已到账" };
+      }
+      await upsertMysqlShare(share);
+      const shareEvent = {
+        type: "share_visit",
+        shareId: share.id,
+        ownerId: owner.id,
+        scene: share.scene,
+        rewarded: Boolean(reward),
+        createdAt: new Date().toISOString()
+      };
+      queueMysqlEvent(shareEvent);
+      const events = await getMysqlTodayUserEvents(owner.id);
+      events.push(shareEvent);
+      const rewards = [...applyDailyTasks(owner, { events, drawRecords: [] }), ...applyMilestoneRewards(owner)];
+      await updateMysqlPlayer(owner);
+      return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ranking") {
+      return json(res, 200, { ranking: await getMysqlRankingRows() });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/stats") {
+      const [users, shares, visits, draws] = await Promise.all([
+        mysqlQuery("select count(*) as count from players"),
+        mysqlQuery("select count(*) as count from shares"),
+        mysqlQuery("select count(*) as count from events where type = 'share_visit'"),
+        mysqlQuery("select count(*) as count from draw_records")
+      ]);
+      return json(res, 200, {
+        users: users[0]?.count || 0,
+        shares: shares[0]?.count || 0,
+        visits: visits[0]?.count || 0,
+        draws: draws[0]?.count || 0
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/users") {
+      const rows = await mysqlQuery(
+        "select id, nickname, score, heat, reputation, fragments, draw_chances, opened_packs, owned_cards from players order by created_at desc"
+      );
+      const users = await Promise.all(rows.map(async row => ({
+        id: row.id,
+        nickname: row.nickname,
+        score: row.score || 0,
+        heat: row.heat || 0,
+        reputation: row.reputation || 0,
+        fragments: row.fragments || 0,
+        drawChances: row.draw_chances || 0,
+        openedPacks: row.opened_packs || 0,
+        collected: Object.keys(parseJsonValue(row.owned_cards, {})).length,
+        drawRecords: await getMysqlRecentDrawRecords(row.id, 50)
+      })));
+      return json(res, 200, { users });
+    }
+
+    return json(res, 404, { message: "接口不存在" });
+  } catch (error) {
+    return json(res, 500, { message: "服务器错误", detail: error.message });
+  }
+}
+
 async function handleSupabase(req, res, url) {
   try {
     if (req.method === "GET" && url.pathname === "/api/cards") {
@@ -1394,6 +2089,7 @@ async function handle(req, res) {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res, url);
+  if (USE_MYSQL) return handleMySQL(req, res, url);
   if (USE_SUPABASE) return handleSupabase(req, res, url);
   const db = await readDb();
 

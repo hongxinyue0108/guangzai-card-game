@@ -1,19 +1,21 @@
 # 光仔卡牌 H5 小游戏
 
 训练营可部署版本：一个 Node 服务同时提供 H5 前端和后端接口。  
-本地没有 Supabase 环境变量时会使用 `backend/db.json` 兜底；部署时配置 Supabase 后会写入云数据库。
+正式多人扫码建议使用 MySQL 存储数据、Redis 做缓存；本地没有数据库环境变量时会使用 `backend/db.json` 兜底。
 
 ## 技术结构
 
 - 前端：原生 HTML / CSS / JavaScript
 - 后端：Node.js 原生 HTTP 服务
-- 数据：Supabase，未配置时使用本地 `backend/db.json`
+- 数据：MySQL，未配置时使用本地 `backend/db.json`
+- 缓存：Redis，可选，用于登录态和排行榜缓存
 - 分享：生成二维码海报，二维码指向分享页，进入分享页后记录跳转并给奖励
 
 ## 本地运行
 
 ```bash
 cd guangzai-card-game
+npm install
 npm start
 ```
 
@@ -23,12 +25,12 @@ npm start
 http://localhost:8787
 ```
 
-## Supabase 配置
+## MySQL + Redis 配置
 
-1. 在 Supabase 的 SQL Editor 运行：
+1. 创建 MySQL 数据库表：
 
-```text
-supabase-schema.sql
+```bash
+mysql -u root -p < mysql-schema.sql
 ```
 
 2. 创建 `.env`：
@@ -40,13 +42,22 @@ cp .env.example .env
 3. 填入：
 
 ```env
-SUPABASE_URL=https://你的项目.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=你的 secret key
 HOST=0.0.0.0
 PORT=8787
+PUBLIC_BASE_URL=http://你的服务器公网IP:8787
+
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=guangzai
+MYSQL_PASSWORD=你的数据库密码
+MYSQL_DATABASE=guangzai_card_game
+
+REDIS_URL=redis://127.0.0.1:6379
 ```
 
-注意：`.env` 不要提交到 Gitee。
+注意：`.env` 不要提交到 Gitee 或 GitHub。
+
+只要 `.env` 里配置了 `MYSQL_HOST`、`MYSQL_USER`、`MYSQL_DATABASE`，后端就会优先使用 MySQL，不再走 Supabase 或 `db.json`。
 
 ## 腾讯云部署思路
 
@@ -57,6 +68,7 @@ git clone 你的Gitee仓库地址
 cd guangzai-card-game
 cp .env.example .env
 nano .env
+npm install
 npm start
 ```
 

@@ -1,0 +1,420 @@
+光仔卡牌 H5 小游戏部署指南
+==========================
+
+目标
+----
+把本地项目部署到服务器，让别人可以通过公网 IP 或域名扫码访问。
+
+当前项目结构是：
+
+- 前端：frontend/
+- 后端：backend/server.js
+- 数据库：MySQL
+- 缓存：Redis
+- 建表文件：mysql-schema.sql
+- 启动命令：npm start
+
+
+一、本地需要做什么
+------------------
+
+1. 确认本地项目可以正常启动
+
+   cd /Users/falconair/Desktop/h5game/guangzai-card-game
+   npm start
+
+   浏览器打开：
+
+   http://localhost:8787
+
+2. 确认不要把 .env 上传到仓库
+
+   .env 里有数据库密码，不能提交。
+   当前 .gitignore 已经忽略了：
+
+   .env
+   .env.*
+
+3. 提交代码到 Git 仓库
+
+   建议提交这些文件：
+
+   .env.example
+   .gitignore
+   README.md
+   backend/server.js
+   frontend/
+   mysql-schema.sql
+   package.json
+   package-lock.json
+   start-backend.sh
+   start-frontend.sh
+
+   不要提交：
+
+   .env
+   .env.supabase-backup
+   node_modules/
+   backend/db.json
+
+
+二、服务器需要准备什么
+----------------------
+
+服务器上需要安装：
+
+1. Node.js
+2. MySQL
+3. Redis
+4. Git
+5. pm2，正式运行推荐使用
+
+如果是 Ubuntu / Debian 服务器，可以参考：
+
+   sudo apt update
+   sudo apt install -y git mysql-server redis-server
+
+Node.js 建议使用 NodeSource 或 nvm 安装 20+ 版本。
+
+
+三、把代码放到服务器
+--------------------
+
+进入你希望放项目的目录，例如：
+
+   cd /www
+
+拉取代码：
+
+   git clone 你的仓库地址 guangzai-card-game
+   cd guangzai-card-game
+
+安装依赖：
+
+   npm install
+
+
+三点五、代码放到服务器后要改什么
+------------------------------
+
+正常情况下，不需要修改前端或后端源代码。
+
+你真正需要改的是服务器项目根目录下的 .env 文件，以及服务器安全组/防火墙。
+
+必须根据服务器修改：
+
+1. PUBLIC_BASE_URL
+
+   本地是：
+
+   PUBLIC_BASE_URL=http://localhost:8787
+
+   服务器上要改成：
+
+   PUBLIC_BASE_URL=http://你的服务器公网IP:8787
+
+   如果你有域名，则改成：
+
+   PUBLIC_BASE_URL=https://你的域名
+
+   这个值会影响二维码、分享链接、海报里的访问地址。
+   如果这里还写 localhost，别人扫码会打不开，因为 localhost 只代表访问者自己的手机或电脑。
+
+2. MYSQL_PASSWORD
+
+   本地 MySQL 密码和服务器 MySQL 密码通常不同。
+   服务器上必须写服务器自己的 MySQL 密码。
+
+3. MYSQL_USER
+
+   如果服务器上你继续用 root，就写：
+
+   MYSQL_USER=root
+
+   如果你在服务器上创建了专门的数据库用户，例如 guangzai，就写：
+
+   MYSQL_USER=guangzai
+
+4. MYSQL_HOST
+
+   如果 MySQL 和 Node 服务在同一台服务器：
+
+   MYSQL_HOST=127.0.0.1
+
+   如果 MySQL 是单独的云数据库，例如腾讯云 TencentDB：
+
+   MYSQL_HOST=云数据库内网地址或公网地址
+
+5. REDIS_URL
+
+   如果 Redis 和 Node 服务在同一台服务器：
+
+   REDIS_URL=redis://127.0.0.1:6379
+
+   如果 Redis 是单独的云 Redis：
+
+   REDIS_URL=redis://Redis地址:6379
+
+   如果云 Redis 设置了密码，格式可能是：
+
+   REDIS_URL=redis://:密码@Redis地址:6379
+
+6. PORT
+
+   当前项目默认：
+
+   PORT=8787
+
+   如果你不使用 Nginx，直接公网访问，就需要开放 8787 端口。
+   如果你后面用 Nginx 反向代理到 80/443，可以保留 PORT=8787。
+
+不要改：
+
+- frontend/ 里的接口地址一般不用改，因为前端默认请求同域名下的 /api。
+- backend/server.js 不应该为了换服务器而改。
+- mysql-schema.sql 不应该随便改，除非你确实要调整数据库结构。
+- package.json 不需要为部署改。
+
+服务器上必须自己创建、但不要提交到 Git：
+
+- .env
+
+服务器上不需要上传：
+
+- node_modules/
+- 本地 .env
+- .env.supabase-backup
+- backend/db.json
+
+一句话记忆：
+
+   代码上传后，主要改 .env，不改源代码。
+
+
+四、启动 MySQL 和 Redis
+----------------------
+
+Linux 服务器常用命令：
+
+   sudo systemctl start mysql
+   sudo systemctl enable mysql
+
+   sudo systemctl start redis-server
+   sudo systemctl enable redis-server
+
+有些服务器服务名可能是 mysqld 或 redis，需要按实际环境调整。
+
+检查 Redis：
+
+   redis-cli ping
+
+看到 PONG 就说明 Redis 正常。
+
+
+五、创建数据库和表
+------------------
+
+在项目根目录执行：
+
+   mysql -uroot -p < mysql-schema.sql
+
+输入服务器 MySQL 的 root 密码。
+
+执行成功后可以检查：
+
+   mysql -uroot -p
+
+进入 MySQL 后：
+
+   SHOW DATABASES;
+   USE guangzai_card_game;
+   SHOW TABLES;
+
+应该看到：
+
+   players
+   shares
+   sessions
+   draw_records
+   events
+
+退出 MySQL：
+
+   exit
+
+
+六、配置服务器 .env
+-------------------
+
+在服务器项目根目录创建 .env：
+
+   nano .env
+
+填入：
+
+   HOST=0.0.0.0
+   PORT=8787
+   PUBLIC_BASE_URL=http://你的服务器公网IP:8787
+
+   MYSQL_HOST=127.0.0.1
+   MYSQL_PORT=3306
+   MYSQL_USER=root
+   MYSQL_PASSWORD=你的服务器MySQL密码
+   MYSQL_DATABASE=guangzai_card_game
+
+   REDIS_URL=redis://127.0.0.1:6379
+
+注意：
+
+- PUBLIC_BASE_URL 必须是别人能访问到的地址。
+- 如果暂时没有域名，就用 http://服务器公网IP:8787。
+- 如果以后有域名，就改成 https://你的域名。
+- .env 不能上传到 Git 仓库。
+
+
+七、启动项目
+------------
+
+临时启动：
+
+   npm start
+
+如果看到：
+
+   Guangzai backend is running at http://0.0.0.0:8787
+
+说明服务启动成功。
+
+正式运行建议使用 pm2：
+
+   sudo npm install -g pm2
+   pm2 start backend/server.js --name guangzai-card-game
+   pm2 save
+
+查看运行状态：
+
+   pm2 list
+   pm2 logs guangzai-card-game
+
+重启：
+
+   pm2 restart guangzai-card-game
+
+停止：
+
+   pm2 stop guangzai-card-game
+
+
+八、开放服务器端口
+------------------
+
+需要开放 8787 端口。
+
+如果服务器有安全组，例如腾讯云、阿里云：
+
+- 入站规则
+- TCP
+- 端口 8787
+- 来源 0.0.0.0/0
+
+如果服务器系统有防火墙，例如 ufw：
+
+   sudo ufw allow 8787/tcp
+
+
+九、访问测试
+------------
+
+浏览器打开：
+
+   http://你的服务器公网IP:8787
+
+如果能打开游戏，说明部署成功。
+
+然后用这个地址生成二维码海报。
+
+
+十、域名情况
+------------
+
+短期展示可以不买域名，直接使用：
+
+   http://服务器公网IP:8787
+
+如果买了域名，需要：
+
+1. 在域名服务商处添加 DNS 解析
+2. A 记录指向服务器公网 IP
+3. 把 .env 里的 PUBLIC_BASE_URL 改成域名
+4. 如使用中国大陆服务器，正式域名访问通常需要 ICP 备案
+5. 如使用 HTTPS，需要配置 SSL 证书和反向代理，例如 Nginx
+
+
+十一、数据在哪里
+----------------
+
+MySQL 保存长期数据：
+
+- players：玩家账号、积分、碎片、抽卡次数、卡册
+- draw_records：抽卡记录
+- events：注册、抽卡、事件选择等行为记录
+- shares：分享记录
+- sessions：Redis 不可用时的登录态兜底
+
+Redis 作为缓存：
+
+- session:tok_xxx：登录态缓存
+- ranking:v1：排行榜缓存
+
+Redis 清空不会丢失核心游戏数据。
+MySQL 才是主数据库。
+
+
+十二、常见问题
+--------------
+
+1. npm start 后提示端口被占用
+
+   说明 8787 已经有服务在跑。
+   可以先查进程，或者换 PORT。
+
+2. 游戏打不开
+
+   检查：
+
+   - pm2 是否运行
+   - 服务器安全组是否开放 8787
+   - .env 里的 HOST 是否是 0.0.0.0
+   - PUBLIC_BASE_URL 是否写成公网地址
+
+3. 登录或注册失败
+
+   检查：
+
+   - MySQL 是否启动
+   - .env 里的 MYSQL_PASSWORD 是否正确
+   - mysql-schema.sql 是否已经导入
+
+4. 排行榜或登录态异常
+
+   检查 Redis：
+
+   redis-cli ping
+
+   Redis 挂了不会丢核心数据，但会影响缓存性能。
+
+
+最短部署链路
+------------
+
+如果只记一条流程，就是：
+
+   上传代码
+   安装 Node.js / MySQL / Redis
+   npm install
+   mysql -uroot -p < mysql-schema.sql
+   创建 .env
+   pm2 start backend/server.js --name guangzai-card-game
+   开放 8787 端口
+   访问 http://服务器公网IP:8787
+   用这个地址生成二维码
