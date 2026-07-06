@@ -54,6 +54,7 @@ function maybeStartOnboarding() {
 }
 
 function startIntro() {
+  document.body.classList.add("intro-active");
   const scenes = [
     {
       title: "宇宙深处，有一座殿堂",
@@ -118,6 +119,7 @@ function finishIntro(sceneTimer = null) {
   state.introCountdownTimer = null;
   localStorage.setItem(introKey(), "1");
   $("#introOverlay").classList.add("hidden");
+  document.body.classList.remove("intro-active");
   startTour();
 }
 
@@ -143,6 +145,7 @@ function showPage(pageId) {
 function startTour(force = false) {
   if (!state.user || (!force && localStorage.getItem(tourKey()))) return;
   showPage("homePage");
+  document.body.classList.add("tour-active");
   $("#modal").classList.add("hidden");
   state.tourSteps = buildTourSteps();
   state.tourIndex = 0;
@@ -183,8 +186,15 @@ function renderTourStep() {
 
     const card = $("#tourCard");
     const placeBelow = rect.top < window.innerHeight * 0.52;
-    card.style.top = placeBelow ? `${Math.min(window.innerHeight - 190, rect.bottom + 18)}px` : "auto";
-    card.style.bottom = placeBelow ? "auto" : `${Math.min(window.innerHeight - 190, window.innerHeight - rect.top + 18)}px`;
+    const cardHeight = Math.min(card.scrollHeight || 190, window.innerHeight - 36);
+    const gap = 18;
+    if (placeBelow) {
+      card.style.top = `${Math.max(18, Math.min(window.innerHeight - cardHeight - gap, rect.bottom + gap))}px`;
+      card.style.bottom = "auto";
+    } else {
+      card.style.top = "auto";
+      card.style.bottom = `${Math.max(18, Math.min(window.innerHeight - cardHeight - gap, window.innerHeight - rect.top + gap))}px`;
+    }
 
     $("#tourStep").textContent = `${state.tourIndex + 1}/${state.tourSteps.length}`;
     $("#tourTitle").textContent = step.title;
@@ -202,6 +212,7 @@ function nextTourStep() {
 function finishTour() {
   localStorage.setItem(tourKey(), "1");
   $("#tourOverlay").classList.add("hidden");
+  document.body.classList.remove("tour-active");
 }
 
 function rewardHtml(rewards = []) {
