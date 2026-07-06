@@ -124,8 +124,9 @@ function finishIntro(sceneTimer = null) {
 function buildTourSteps() {
   return [
     { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。每次开包抽 4 张卡，它会随时间恢复，也能通过积分档位、累计开包和分享获得。" },
-    { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
     { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，达到积分档位还会奖励抽卡次数。" },
+    { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。" },
+    { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
     { key: "pack", title: "记忆晶核", text: "这里开包抽取 4 张名场面卡。每张卡会显示点数，选出的 3 张能凑出 24 点时返还 1 次抽卡机会。" },
     { key: "album", title: "卡册", text: "卡册是你的梗档案馆。收集新卡会增加积分、提升排行榜名次；集齐一个系列还能领取额外抽卡次数和碎片。" },
     { key: "rank", title: "排行榜", text: "排行榜主要按积分排序。想提升排行，就多开包、收集高价值新卡，并用碎片补齐卡册。" },
@@ -152,6 +153,8 @@ function startTour(force = false) {
 function renderTourStep() {
   const step = state.tourSteps[state.tourIndex];
   if (!step) return finishTour();
+  if (step.key === "album") showPage("albumPage");
+  if (step.key === "rank") showPage("rankPage");
   const target = document.querySelector(`[data-tour="${step.key}"]`);
   if (!target && step.key !== "disclaimer") return finishTour();
   if (!target && step.key === "disclaimer") {
@@ -212,7 +215,7 @@ function rewardHtml(rewards = []) {
 }
 
 function cardFace(card, owned = true) {
-  return `<div class="card-art">${owned ? card.name.slice(0, 1) : "?"}</div>`;
+  return `<div class="card-art">${owned ? '<span class="card-art-mark"></span>' : "?"}</div>`;
 }
 
 function cardMeta(card) {
@@ -374,6 +377,14 @@ function shareLink(shareId) {
   return new URL(`./share.html?shareId=${encodeURIComponent(shareId)}`, window.location.href).href;
 }
 
+function gameHomeUrl() {
+  return new URL("./index.html#homePage", window.location.href).href;
+}
+
+function rememberShareReturn() {
+  sessionStorage.setItem("gz_return_to_game", gameHomeUrl());
+}
+
 function shareEnv() {
   const ua = navigator.userAgent.toLowerCase();
   if (/micromessenger/.test(ua)) return "wechat";
@@ -382,6 +393,7 @@ function shareEnv() {
 }
 
 function openSharePage(shareId) {
+  rememberShareReturn();
   window.location.href = `./share.html?shareId=${encodeURIComponent(shareId)}&from=owner`;
 }
 
@@ -456,24 +468,29 @@ function showHelpGuide() {
     <div class="guide">
       <p class="eyebrow">玩法说明</p>
       <h3>拾忆者行动手册</h3>
-      <p class="guide-lead">你的主线目标是获得抽卡机会，开启记忆晶核，解锁更多名场面卡牌，并冲上名场面之柱排行榜。</p>
+      <p class="guide-lead">主线目标是通过凑24点和完成任务获得抽卡机会，开启记忆晶核，解锁更多名场面卡牌，并冲上排行榜巅峰！</p>
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
           <p>用于开启记忆晶核。每次开包抽 4 张卡，可通过时间恢复、积分档位、累计开包返还和分享跳转获得。</p>
         </div>
         <div>
-          <strong>碎片</strong>
-          <p>用于在卡册兑换未解锁卡牌。抽到重复卡时，也会自动转化为碎片。</p>
-        </div>
-        <div>
           <strong>积分</strong>
           <p>排行榜核心指标。抽到新卡会提高积分，稀有度越高积分越多。</p>
         </div>
         <div>
-          <strong>24 点判定</strong>
-          <p>每次开包得到的 4 张卡都会显示点数。系统自动判断能否用加减乘除凑出 24 点，成功后返还 1 次抽卡机会。</p>
+          <strong>收集</strong>
+          <p>表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。</p>
         </div>
+        <div>
+          <strong>碎片</strong>
+          <p>用于在卡册兑换未解锁卡牌。抽到重复卡时，也会自动转化为碎片。</p>
+        </div>
+      </div>
+      
+      <div class="guide-ranking">
+        <strong>24点判定</strong>
+        <p>每次开包得到的 4 张卡都会显示点数。你需要选择 3 张放入卡册；若选中的 3 张能用加减乘除凑出 24 点，才会返还 1 次抽卡机会。</p>
       </div>
       <div class="guide-ranking">
         <strong>排行榜怎么算？</strong>
@@ -481,7 +498,7 @@ function showHelpGuide() {
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位、累计开包达到指定数量、分享跳转和 24 点判定成功都会奖励抽卡次数。</p>
+        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位、累计开包达到指定数量、分享跳转，以及选中的 3 张卡成功凑出 24 点都会奖励抽卡次数。</p>
       </div>
     </div>
   `;
@@ -517,6 +534,10 @@ function render() {
   }
   $("#authView").classList.add("hidden");
   $("#gameView").classList.remove("hidden");
+  if (window.location.hash === "#homePage") {
+    showPage("homePage");
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
   $("#nicknameText").textContent = state.user.nickname;
   $("#drawChances").textContent = state.user.drawChances;
   $("#score").textContent = state.user.score;
@@ -683,9 +704,11 @@ window.nativeShare = nativeShare;
 window.copyShareLink = copyShareLink;
 window.openSharePage = openSharePage;
 window.goShare = shareId => {
+  rememberShareReturn();
   window.location.href = `./share.html?shareId=${encodeURIComponent(shareId)}`;
 };
 window.openPoster = shareId => {
+  rememberShareReturn();
   window.location.href = `./poster.html?shareId=${encodeURIComponent(shareId)}`;
 };
 
@@ -717,7 +740,7 @@ async function drawCard() {
     const data = await request("/api/draw", { method: "POST" });
     $("#packStage").classList.add("charging");
     $("#crystal").classList.add("opening");
-    $("#crystalText").textContent = "？";
+    $("#crystalText").textContent = "";
     $("#drawBtn").textContent = "晶核共鸣中...";
     await new Promise(resolve => setTimeout(resolve, 1050));
     const previewCard = (data.cards || []).reduce((best, item) => {
@@ -728,12 +751,12 @@ async function drawCard() {
     $("#packStage").classList.remove("charging");
     $("#packStage").classList.add("rarity-phase", "burst", `rarity-phase-${previewCard.rarity}`);
     $("#crystal").className = `crystal reveal rarity-glow-${previewCard.rarity} rarity-preview-${previewCard.rarity}`;
-    $("#crystalText").textContent = previewCard.rarityName || "开";
+    $("#crystalText").textContent = "";
     $("#drawBtn").textContent = "候选卡响应中...";
     await new Promise(resolve => setTimeout(resolve, 900));
     $("#packStage").classList.remove("rarity-phase", "burst", `rarity-phase-${previewCard.rarity}`);
     $("#crystal").className = "crystal";
-    $("#crystalText").textContent = "开";
+    $("#crystalText").textContent = "";
     $("#drawBtn").disabled = false;
     $("#drawBtn").textContent = "开包";
     state.user = data.user;
@@ -742,7 +765,7 @@ async function drawCard() {
   } catch (error) {
     $("#packStage").className = "pack-stage";
     $("#crystal").className = "crystal";
-    $("#crystalText").textContent = "开";
+    $("#crystalText").textContent = "";
     $("#drawBtn").disabled = false;
     $("#drawBtn").textContent = "开包";
     toast(error.message);
@@ -760,6 +783,7 @@ function bind() {
         method: "POST",
         body: JSON.stringify({ scene: "invite" })
       });
+      rememberShareReturn();
       window.location.href = `./poster.html?shareId=${encodeURIComponent(data.share.id)}`;
     } catch (error) {
       toast(error.message);

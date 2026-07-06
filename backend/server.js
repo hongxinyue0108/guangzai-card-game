@@ -1065,6 +1065,57 @@ function drawPoint() {
   return Math.floor(Math.random() * 13) + 1;
 }
 
+function shuffle(items) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+function weightedUniqueCards(count) {
+  const picked = [];
+  const pickedIds = new Set();
+  let attempts = 0;
+  while (picked.length < count && attempts < count * 80) {
+    attempts += 1;
+    const card = weightedCard();
+    if (!card || pickedIds.has(card.id)) continue;
+    picked.push(card);
+    pickedIds.add(card.id);
+  }
+  if (picked.length < count) {
+    for (const card of shuffle(CARDS)) {
+      if (picked.length >= count) break;
+      if (pickedIds.has(card.id)) continue;
+      picked.push(card);
+      pickedIds.add(card.id);
+    }
+  }
+  return picked;
+}
+
+function find24Triple(points) {
+  for (let a = 0; a < points.length; a += 1) {
+    for (let b = a + 1; b < points.length; b += 1) {
+      for (let c = b + 1; c < points.length; c += 1) {
+        const solution = solve24([points[a], points[b], points[c]]);
+        if (solution.success) return { indexes: [a, b, c], solution };
+      }
+    }
+  }
+  return null;
+}
+
+function drawSolvablePackPoints(count = 4) {
+  for (let attempts = 0; attempts < 800; attempts += 1) {
+    const points = Array.from({ length: count }, drawPoint);
+    if (find24Triple(points)) return points;
+  }
+  return shuffle([6, 4, 1, drawPoint()]);
+}
+
 function rarityPower(card) {
   return RARITIES[card.rarity]?.score || 0;
 }
@@ -1092,13 +1143,15 @@ function publicPackSlots(slots) {
 function createPendingPack(user, count = 4) {
   ensureUserShape(user);
   const createdAt = new Date().toISOString();
+  const points = drawSolvablePackPoints(count);
+  const cards = weightedUniqueCards(count);
   const pack = {
     id: id("pack"),
     createdAt,
-    slots: Array.from({ length: count }, () => ({
+    slots: Array.from({ length: count }, (_, index) => ({
       slotId: id("slot"),
-      point: drawPoint(),
-      card: weightedCard()
+      point: points[index],
+      card: cards[index]
     }))
   };
   user.challengeState.pendingPack = pack;

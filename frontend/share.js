@@ -2,6 +2,7 @@ const API = "";
 const params = new URLSearchParams(window.location.search);
 const shareId = params.get("shareId");
 const ownerPreview = params.get("from") === "owner";
+const returnGame = document.querySelector("#returnGame");
 
 async function visitShare() {
   if (!shareId) {
@@ -35,3 +36,6 @@ async function visitShare() {
 }
 
 visitShare();
+returnGame.addEventListener("click", () => {
+  window.location.href = sessionStorage.getItem("gz_return_to_game") || "./index.html#homePage";
+});

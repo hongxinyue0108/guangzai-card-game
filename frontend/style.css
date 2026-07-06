@@ -1689,6 +1689,7 @@ button:disabled {
 
 .tabs {
   position: fixed;
+  z-index: 100;
   left: 50%;
   bottom: 0;
   display: grid;
@@ -1713,6 +1714,7 @@ button:disabled {
 
 .modal {
   position: fixed;
+  z-index: 5000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -1722,6 +1724,7 @@ button:disabled {
 
 .modal-card {
   position: relative;
+  z-index: 1;
   width: min(100%, 400px);
   max-height: calc(100vh - 36px);
   overflow: auto;
@@ -2147,7 +2150,7 @@ body::before {
   border: 0;
   border-radius: 0;
   padding: 0;
-  background: url("./assets/ui/login-comic.jpg") center top / 100% auto no-repeat;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -2384,7 +2387,7 @@ select {
   margin-bottom: 14px;
   border: 2px solid rgba(27, 95, 201, 0.56);
   border-radius: 16px;
-  padding: 12px;
+  padding: 22px 12px 12px;
   background:
     radial-gradient(circle at 8% 0%, rgba(255, 110, 181, 0.18), transparent 28%),
     radial-gradient(circle at 92% 12%, rgba(50, 186, 245, 0.22), transparent 28%),
@@ -2411,7 +2414,7 @@ select {
 }
 
 .topbar h2 {
-  margin-top: 12px;
+  margin-top: 8px;
   color: var(--blue);
   font-size: 28px;
   font-weight: 1000;
@@ -2528,7 +2531,7 @@ select {
   border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0)),
-    url("./assets/ui/pack-card.png") center / cover no-repeat,
+    url("./assets/ui/pack-card-clean.png") center / cover no-repeat,
     linear-gradient(180deg, #afe6ff, #ffadd7);
   box-shadow: 0 10px 0 rgba(13,63,159,0.12), 0 18px 34px rgba(50, 186, 245, 0.22);
 }
@@ -2621,6 +2624,19 @@ select {
     radial-gradient(circle at 50% 42%, #fff 0 18px, transparent 19px),
     linear-gradient(135deg, #91dcff, #ffafd9);
   border: 2px solid rgba(27, 95, 201, 0.38);
+}
+
+.card-art-mark {
+  display: block;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 10px, transparent 11px),
+    conic-gradient(from 45deg, transparent 0 12%, rgba(255,255,255,0.95) 12% 18%, transparent 18% 50%, rgba(255,255,255,0.95) 50% 56%, transparent 56% 100%),
+    linear-gradient(135deg, #8dd8ff, #ff9bd0);
+  box-shadow: 0 0 24px rgba(255,255,255,0.8), 0 8px 20px rgba(27,95,201,0.18);
+  transform: rotate(45deg);
 }
 
 .card > strong,
@@ -2824,13 +2840,13 @@ select {
 }
 
 .campaign-poster {
-  aspect-ratio: 943 / 1536;
+  aspect-ratio: 1100 / 1672;
   min-height: auto;
   border: 0;
   border-radius: 0;
   padding: 0;
   overflow: hidden;
-  background: url("./assets/ui/share-poster-vertical.png") center / 100% 100% no-repeat;
+  background: url("./assets/ui/share-poster-baked.png") center / 100% 100% no-repeat;
   box-shadow: 0 18px 42px rgba(35, 108, 181, 0.18);
 }
 
@@ -2841,79 +2857,27 @@ select {
 }
 
 .poster-badge {
-  position: absolute;
-  left: 13%;
-  top: 5.8%;
-  z-index: 1;
-  margin: 0;
-  max-width: 58%;
-  border: 0;
-  padding: 0;
-  color: #fff;
-  background: transparent;
-  font-size: clamp(22px, 8vw, 42px);
-  line-height: 1;
-  text-shadow:
-    3px 3px 0 #07131f,
-    -2px -2px 0 #07131f,
-    2px -2px 0 #07131f,
-    -2px 2px 0 #07131f,
-    0 5px 0 #ff6eb5;
-  transform: rotate(-3deg);
+  display: none;
 }
 
 .campaign-poster h1 {
-  position: absolute;
-  left: 8.5%;
-  top: 22.5%;
-  z-index: 1;
-  width: 55%;
-  margin: 0;
-  color: #07348f;
-  font-size: clamp(25px, 7.8vw, 43px);
-  line-height: 1.12;
-  text-align: left;
-  text-shadow: 2px 2px 0 #fff, 0 4px 0 rgba(255, 110, 181, 0.32);
+  display: none;
 }
 
 .campaign-poster h2 {
-  position: absolute;
-  left: 9.5%;
-  top: 32%;
-  z-index: 1;
-  width: 66%;
-  margin: 0;
-  color: #fff;
-  font-size: clamp(16px, 4.6vw, 25px);
-  line-height: 1.1;
-  text-align: left;
-  text-shadow:
-    2px 2px 0 #07131f,
-    -1px -1px 0 #07131f,
-    1px -1px 0 #07131f,
-    -1px 1px 0 #07131f;
+  display: none;
 }
 
 .poster-copy {
-  position: absolute;
-  left: 8.5%;
-  top: 43.5%;
-  z-index: 1;
-  width: 43%;
-  margin: 0;
-  color: #07348f;
-  font-size: clamp(13px, 3.4vw, 18px);
-  line-height: 1.62;
-  text-align: left;
-  font-weight: 900;
+  display: none;
 }
 
 .qr-panel {
   position: absolute;
-  right: 11.2%;
-  top: 45.5%;
-  z-index: 1;
-  width: 26%;
+  right: 7%;
+  top: 39%;
+  z-index: 10;
+  width: 23%;
   height: auto;
   aspect-ratio: 1;
   margin: 0;
@@ -2921,55 +2885,207 @@ select {
   border-radius: 12px;
   background: #fff;
   box-shadow: 5px 7px 0 rgba(7, 19, 31, 0.28);
+  transform: rotate(7.5deg);
 }
 
 .qr-panel img {
+  display: block;
   width: 100%;
   height: 100%;
+  object-fit: contain;
 }
 
 .scan-text {
-  position: absolute;
-  right: 12%;
-  top: 61.8%;
-  z-index: 1;
-  width: 24%;
-  margin: 0;
-  color: #07348f;
-  font-size: clamp(16px, 4.8vw, 26px);
-  line-height: 1;
-  text-shadow: 2px 2px 0 #fff;
+  display: none;
 }
 
 .poster-slogan {
-  position: absolute;
-  left: 38%;
-  right: 16%;
-  bottom: 5.1%;
-  z-index: 1;
-  margin: 0;
-  color: #fff;
-  font-size: clamp(13px, 3.5vw, 19px);
-  line-height: 1.35;
-  text-align: left;
-  font-weight: 1000;
-  text-shadow:
-    2px 2px 0 #07131f,
-    -1px -1px 0 #07131f,
-    1px -1px 0 #07131f,
-    -1px 1px 0 #07131f;
+  display: none;
 }
 
 .poster-disclaimer {
+  display: none;
+}
+
+/* Clean login and pack-screen overrides: keep the comic style, remove baked-in fake UI. */
+.auth {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: min(920px, calc(100vh - 36px));
+  margin-top: 0;
+  border: 10px solid #fff;
+  border-radius: 0;
+  padding: clamp(24px, 7vw, 46px) clamp(18px, 5vw, 30px) 24px;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(255, 102, 176, 0.28), transparent 24%),
+    radial-gradient(circle at 86% 6%, rgba(50, 186, 245, 0.28), transparent 26%),
+    radial-gradient(circle at 50% 52%, rgba(255, 255, 255, 0.86), transparent 42%),
+    repeating-radial-gradient(circle at 12% 18%, rgba(7, 29, 90, 0.08) 0 2px, transparent 2px 10px),
+    linear-gradient(180deg, #c8f0ff 0%, #f8fcff 62%, #e9f7ff 100%);
+  box-shadow: 0 22px 60px rgba(27, 95, 201, 0.2);
+}
+
+.auth::before {
+  content: "光仔卡牌";
+  display: block;
+  order: 1;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px auto 0;
+  padding: 8px 14px 12px;
+  color: #fffef7;
+  font-size: clamp(44px, 13vw, 76px);
+  font-weight: 1000;
+  line-height: 0.92;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow:
+    5px 5px 0 #07131f,
+    -3px -3px 0 #07131f,
+    3px -3px 0 #07131f,
+    -3px 3px 0 #07131f,
+    0 9px 0 var(--pink);
+  transform: rotate(-2deg);
+}
+
+.auth::after {
+  content: "POW!";
   position: absolute;
-  left: 9%;
-  bottom: 14.2%;
+  left: 12px;
+  top: 12px;
+  z-index: 0;
+  padding: 8px 10px;
+  color: #33d9ff;
+  background: #fff;
+  border: 4px solid #07131f;
+  border-radius: 18px;
+  font-size: 20px;
+  font-weight: 1000;
+  text-shadow: 2px 2px 0 #ff57a9;
+  transform: rotate(-12deg);
+  box-shadow: 4px 5px 0 #07131f;
+}
+
+.auth > .eyebrow,
+.auth > h1 {
+  display: none;
+}
+
+.auth .subtitle {
+  display: block;
+  order: 2;
+  max-width: 410px;
+  margin: 0 auto 4px;
+  border: 4px solid #07131f;
+  border-radius: 0;
+  padding: 12px 14px;
+  color: var(--blue);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 5px 6px 0 #35d9ff, 0 0 0 5px rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.58;
+}
+
+.auth-card {
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
   z-index: 1;
-  width: 46%;
-  margin: 0;
-  color: rgba(7, 52, 143, 0.72);
-  font-size: clamp(9px, 2.5vw, 12px);
-  line-height: 1.4;
-  text-align: left;
-  font-weight: 800;
+  order: 10;
+  width: 100%;
+  max-width: 410px;
+  margin: 2px auto 0;
+  padding: 0;
+}
+
+.auth > .disclaimer {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  order: 20;
+  max-width: 410px;
+  margin: 4px auto 0;
+}
+
+.auth .privacy-note {
+  margin-top: 12px;
+}
+
+.auth #authSubmit {
+  margin-top: 14px;
+}
+
+.pack-stage {
+  min-height: 650px;
+  padding: 54px 18px 46px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.96), transparent 24%),
+    radial-gradient(circle at 50% 22%, rgba(50, 186, 245, 0.22), transparent 30%),
+    radial-gradient(circle at 72% 34%, rgba(255, 110, 181, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 250, 255, 0.99));
+}
+
+.pack-stage::before {
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  bottom: auto;
+  height: 340px;
+  border: 2px solid rgba(135, 181, 245, 0.42);
+  border-radius: 22px;
+  box-shadow: inset 0 0 34px rgba(27, 95, 201, 0.08);
+}
+
+.stage-aura {
+  top: 52px;
+  width: min(340px, 82vw);
+  height: min(340px, 82vw);
+  opacity: 0.92;
+}
+
+.portal-ring {
+  width: min(340px, 82vw);
+  height: min(340px, 82vw);
+  margin: 0 auto 34px;
+}
+
+.crystal,
+.poster-crystal {
+  width: 150px;
+  height: 210px;
+  border: 3px solid #0b25b6;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0)),
+    url("./assets/ui/pack-card-clean.png") center / cover no-repeat,
+    linear-gradient(180deg, #bde9ff, #ffb2d8);
+  box-shadow:
+    0 0 0 5px rgba(255,255,255,0.82),
+    0 12px 0 rgba(13,63,159,0.1),
+    0 22px 40px rgba(50, 186, 245, 0.22);
+}
+
+.crystal span {
+  display: none;
+}
+
+.pack-stage h3 {
+  margin-top: 2px;
+}
+
+.pack-stage .primary.large {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: min(82%, 330px);
+  margin: 26px auto 0;
+}
+
+.pack-stage .hint {
+  margin-top: 26px;
+  padding-top: 0;
 }
