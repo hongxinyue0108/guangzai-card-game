@@ -22,6 +22,7 @@ create table if not exists players (
 
 alter table players
   add column if not exists last_recovered_at timestamptz not null default now(),
+  add column if not exists last_login_at timestamptz not null default now(),
   add column if not exists heat integer not null default 0,
   add column if not exists reputation integer not null default 0,
   add column if not exists milestone_rewards jsonb not null default '{"score":{},"packs":{}}'::jsonb,

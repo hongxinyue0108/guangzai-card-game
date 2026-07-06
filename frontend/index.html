@@ -4,21 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>光仔卡牌</title>
-    <link rel="stylesheet" href="./style.css?v=20260628-event-007" />
+    <link rel="stylesheet" href="./style.css?v=20260706-login-comic-001" />
   </head>
   <body>
     <main class="app">
       <section id="authView" class="auth panel">
         <p class="eyebrow">光子宇宙 · H5 卡牌收集</p>
         <h1>光仔卡牌</h1>
-        <p class="subtitle">推开名场面之殿，收集属于玩家社区的高光、冥场面和经典瞬间。</p>
+        <p class="subtitle">光子宇宙深处，神秘的「梗档案馆」正在开启。那些被玩家反复传颂的高光、失误、热议与传奇梗，正等待新的梗史编纂者前来归档。</p>
+        <p class="disclaimer">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
         <div class="auth-card">
           <div class="segmented">
             <button id="showLogin" class="active">登录</button>
             <button id="showRegister">注册</button>
           </div>
-          <label>账号<input id="nickname" placeholder="例如：hxy，只能注册一次" /></label>
+          <label>账号<input id="nickname" placeholder="自定义账号，用于再次登录" /></label>
           <label>密码<input id="password" type="password" placeholder="至少 3 位" /></label>
+          <p class="privacy-note">不涉及个人信息采集；账号和密码仅用于保存你的卡册、积分、碎片和抽卡次数，方便下次继续登录。</p>
           <button id="authSubmit" class="primary">进入名场面之殿</button>
           <p id="authMessage" class="message"></p>
         </div>
@@ -38,21 +40,12 @@
 
         <section class="stats">
           <div data-tour="draws"><span id="drawChances">0</span><small>抽卡次数</small></div>
-          <div data-tour="heat"><span id="heat">0</span><small>热度</small></div>
-          <div data-tour="reputation"><span id="reputation">0</span><small>口碑</small></div>
           <div data-tour="score"><span id="score">0</span><small>积分</small></div>
           <div data-tour="fragments"><span id="fragments">0</span><small>碎片</small></div>
           <div data-tour="collection"><span id="collection">0/0</span><small>收集</small></div>
         </section>
 
         <section id="homePage" class="page active">
-          <div class="event-panel" data-tour="event">
-            <div class="section-head compact">
-              <h3>今日事件</h3>
-              <span id="challengeProgress">0/3</span>
-            </div>
-            <div id="challengeBox" class="challenge-box"></div>
-          </div>
           <div id="packStage" class="pack-stage" data-tour="pack">
             <div class="stage-aura"></div>
             <div class="spark-field" aria-hidden="true">
@@ -64,13 +57,13 @@
               </div>
             </div>
             <h3>记忆晶核</h3>
-            <p class="pack-copy">每次开启都会拾起一个游戏名场面。重复卡会自动转化为碎片。</p>
+            <p class="pack-copy">主线目标是开启晶核，每次抽出 4 张名场面卡。新卡入册加积分，重复卡自动转化为碎片。</p>
             <button id="drawBtn" class="primary large">开包</button>
-            <p class="hint">抽满 3 包、完成分享跳转、收集新卡都能获得额外奖励。</p>
+            <p class="hint">每张卡会显示点数，4 张能凑出 24 点时返还 1 次抽卡机会。</p>
           </div>
           <div class="goal-panel">
             <div class="section-head compact">
-              <h3>今日目标</h3>
+              <h3>开包任务</h3>
               <span>完成即自动领奖</span>
             </div>
             <div id="taskList" class="task-list"></div>
@@ -106,11 +99,15 @@
           <button class="tab" data-page="albumPage" data-tour="album">卡册</button>
           <button class="tab" data-page="rankPage" data-tour="rank">排行</button>
         </nav>
+        <p class="game-disclaimer">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
       </section>
 
       <div id="introOverlay" class="intro-overlay hidden">
         <div class="intro-stars" aria-hidden="true"></div>
         <div class="intro-gate" aria-hidden="true"></div>
+        <div class="intro-shards" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i>
+        </div>
         <div class="intro-copy">
           <p class="eyebrow">名场面之殿</p>
           <h2 id="introTitle">宇宙深处，门正在开启</h2>
@@ -136,6 +133,6 @@
         </div>
       </div>
     </main>
-    <script src="./main.js?v=20260628-event-007"></script>
+    <script src="./main.js?v=20260703-pack4-24-001"></script>
   </body>
 </html>

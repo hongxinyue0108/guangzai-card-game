@@ -6,11 +6,12 @@ const state = {
   user: null,
   cards: [],
   series: [],
-  challenge: null,
   introTimer: null,
   introCountdownTimer: null,
   tourIndex: 0,
-  tourSteps: []
+  tourSteps: [],
+  pendingPack: null,
+  selectedPackSlots: []
 };
 
 const $ = selector => document.querySelector(selector);
@@ -122,15 +123,13 @@ function finishIntro(sceneTimer = null) {
 
 function buildTourSteps() {
   return [
-    { key: "event", title: "今日事件", text: "先处理策划事件。每次三选一，会改变热度、口碑、碎片或抽卡次数。你每天最多处理 3 个事件。" },
-    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。可以通过事件奖励、积分档位、累计开包返还、分享和时间恢复获得。" },
-    { key: "heat", title: "热度", text: "热度代表活动传播声量。更会制造话题的选择会提高热度，也会帮助你冲排行榜。" },
-    { key: "reputation", title: "口碑", text: "口碑代表玩家信任。透明沟通、降低负担、尊重体验通常会提高口碑。口碑太低会影响结局评价。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。每次开包抽 4 张卡，它会随时间恢复，也能通过积分档位、累计开包和分享获得。" },
     { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
-    { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡、处理事件获得热度和口碑，都会提升积分。达到积分档位还会奖励抽卡次数。" },
-    { key: "pack", title: "记忆晶核", text: "这里开包抽取名场面卡。累计开包达到指定数量，会返还额外抽卡次数。" },
-    { key: "album", title: "卡册", text: "卡册用于查看已收录卡牌，也可以用碎片兑换未解锁卡。部分卡牌会触发被动效果。" },
-    { key: "rank", title: "排行榜", text: "排行榜主要按积分排序。想提升排行，就多处理事件、积累热度和口碑、收集高价值卡牌。" }
+    { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，达到积分档位还会奖励抽卡次数。" },
+    { key: "pack", title: "记忆晶核", text: "这里开包抽取 4 张名场面卡。每张卡会显示点数，选出的 3 张能凑出 24 点时返还 1 次抽卡机会。" },
+    { key: "album", title: "卡册", text: "卡册是你的梗档案馆。收集新卡会增加积分、提升排行榜名次；集齐一个系列还能领取额外抽卡次数和碎片。" },
+    { key: "rank", title: "排行榜", text: "排行榜主要按积分排序。想提升排行，就多开包、收集高价值新卡，并用碎片补齐卡册。" },
+    { key: "disclaimer", title: "展示说明", text: "本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。账号和密码仅用于保存你的游戏进度，方便再次登录。" }
   ];
 }
 
@@ -152,8 +151,23 @@ function startTour(force = false) {
 
 function renderTourStep() {
   const step = state.tourSteps[state.tourIndex];
+  if (!step) return finishTour();
   const target = document.querySelector(`[data-tour="${step.key}"]`);
-  if (!step || !target) return finishTour();
+  if (!target && step.key !== "disclaimer") return finishTour();
+  if (!target && step.key === "disclaimer") {
+    $("#tourSpotlight").classList.add("hidden");
+    const card = $("#tourCard");
+    card.classList.add("standalone");
+    card.style.top = "50%";
+    card.style.bottom = "auto";
+    $("#tourStep").textContent = `${state.tourIndex + 1}/${state.tourSteps.length}`;
+    $("#tourTitle").textContent = step.title;
+    $("#tourText").textContent = step.text;
+    $("#tourNext").textContent = "我知道了";
+    return;
+  }
+  $("#tourSpotlight").classList.remove("hidden");
+  $("#tourCard").classList.remove("standalone");
   target.scrollIntoView({ behavior: "smooth", block: "center" });
   setTimeout(() => {
     const rect = target.getBoundingClientRect();
@@ -198,37 +212,127 @@ function rewardHtml(rewards = []) {
 }
 
 function cardFace(card, owned = true) {
-  if (card.id === "c001" && owned) {
-    return `
-      <div class="special-card-face image-card-face">
-        <img src="./assets/cards/sixue-fansha.png" alt="丝血反杀卡面" />
-      </div>
-    `;
-  }
   return `<div class="card-art">${owned ? card.name.slice(0, 1) : "?"}</div>`;
 }
 
-function showCardResult(card, result) {
-  const rewards = result.rewards || [];
-  const action = ["rare", "epic", "legend", "hidden"].includes(card.rarity)
-    ? `<button class="secondary" onclick="shareScene('card')">分享这张卡 · 跳转领奖</button>`
-    : "";
+function cardMeta(card) {
+  const source = card.source ? `<span class="source-badge">${card.source}</span>` : "";
+  return `<small class="card-meta">${source}<span>${card.series} · ${card.rarityName}</span></small>`;
+}
+
+function showPackChoiceResult(packData) {
+  const cards = packData.cards || [];
+  state.pendingPack = { id: packData.pendingPackId, cards };
+  state.selectedPackSlots = [];
   $("#modalContent").innerHTML = `
     <div class="result-showcase">
-      <p class="eyebrow">抽取结果</p>
-      <div class="card result-card rarity-${card.rarity} ${card.id === "c001" ? "special-result-card" : ""}">
-        <div class="card-shine"></div>
-        ${cardFace(card)}
-        <strong>${card.name}</strong>
-        <small>${card.series} · ${card.rarityName}</small>
-        <p>${card.quote}</p>
+      <p class="eyebrow">四张候选卡</p>
+      <h3>选择 3 张放入卡册</h3>
+      <p class="message">点数会用于 24 点判定。未选择的 1 张会被丢弃，不进入卡册。</p>
+      <div class="pack-result-grid">
+        ${cards.map(item => `
+          <button class="card result-card pack-result-card pack-choice-card rarity-${item.rarity}" onclick="togglePackChoice('${item.slotId}')">
+            <span class="point-badge">${item.point || "?"}</span>
+            <span class="choice-mark">未选</span>
+            <div class="card-shine"></div>
+            ${cardFace(item)}
+            <strong>${item.name}</strong>
+            ${cardMeta(item)}
+            <p>${item.quote}</p>
+          </button>
+        `).join("")}
       </div>
     </div>
-    <p class="message">${
-      result.duplicated
-        ? `重复卡已转化为 ${result.fragmentsGained} 碎片`
-        : `新卡入册，积分 +${result.scoreGained}`
-    }</p>
+    <button id="confirmPackChoiceBtn" class="primary large" disabled onclick="submitPackChoice()">确认入册 0/3</button>
+  `;
+  $("#modal").classList.remove("hidden");
+}
+
+function renderPackChoiceState() {
+  $$(".pack-choice-card").forEach(card => {
+    const onclick = card.getAttribute("onclick") || "";
+    const slotId = onclick.match(/'([^']+)'/)?.[1];
+    const selected = state.selectedPackSlots.includes(slotId);
+    card.classList.toggle("selected", selected);
+    const mark = card.querySelector(".choice-mark");
+    if (mark) mark.textContent = selected ? "入册" : "未选";
+  });
+  const button = $("#confirmPackChoiceBtn");
+  if (button) {
+    button.disabled = state.selectedPackSlots.length !== 3;
+    button.textContent = `确认入册 ${state.selectedPackSlots.length}/3`;
+  }
+}
+
+function togglePackChoice(slotId) {
+  const index = state.selectedPackSlots.indexOf(slotId);
+  if (index >= 0) {
+    state.selectedPackSlots.splice(index, 1);
+  } else if (state.selectedPackSlots.length < 3) {
+    state.selectedPackSlots.push(slotId);
+  } else {
+    toast("只能选择 3 张放入卡册，先取消一张再选新的。");
+  }
+  renderPackChoiceState();
+}
+
+async function submitPackChoice() {
+  if (state.selectedPackSlots.length !== 3) return;
+  try {
+    $("#confirmPackChoiceBtn").disabled = true;
+    $("#confirmPackChoiceBtn").textContent = "入册结算中...";
+    const data = await request("/api/draw/choose", {
+      method: "POST",
+      body: JSON.stringify({ selectedSlotIds: state.selectedPackSlots })
+    });
+    state.pendingPack = null;
+    state.selectedPackSlots = [];
+    state.user = data.user;
+    render();
+    showCardResult(data.card, { ...data.result, rewards: data.rewards || [] }, data);
+  } catch (error) {
+    toast(error.message);
+    renderPackChoiceState();
+  }
+}
+
+function showCardResult(card, result, packData = null) {
+  const cards = packData?.cards?.length ? packData.cards : [card];
+  const results = packData?.results?.length ? packData.results : [result];
+  const puzzle24 = packData?.puzzle24 || null;
+  const rewards = result.rewards || [];
+  const hasShareCard = cards.some(item => ["rare", "epic", "legend", "hidden"].includes(item.rarity));
+  const action = hasShareCard
+    ? `<button class="secondary" onclick="shareScene('card')">分享这张卡 · 跳转领奖</button>`
+    : "";
+  const totalScore = results.reduce((sum, item) => sum + (item.scoreGained || 0), 0);
+  const totalFragments = results.reduce((sum, item) => sum + (item.fragmentsGained || 0), 0);
+  const newCount = results.filter(item => !item.duplicated).length;
+  const duplicateCount = results.filter(item => item.duplicated).length;
+  $("#modalContent").innerHTML = `
+    <div class="result-showcase">
+      <p class="eyebrow">入册结算</p>
+      <div class="pack-result-grid">
+        ${cards.map((item, index) => `
+          <div class="card result-card pack-result-card rarity-${item.rarity}">
+            <span class="point-badge">${item.point || "?"}</span>
+            <div class="card-shine"></div>
+            ${cardFace(item)}
+            <strong>${item.name}</strong>
+            ${cardMeta(item)}
+            <p>${results[index]?.duplicated ? `重复 +${results[index].fragmentsGained} 碎片` : `新卡 +${results[index]?.scoreGained || 0} 积分`}</p>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    ${puzzle24 ? `
+      <div class="puzzle-summary ${puzzle24.success ? "success" : "failed"}">
+        <strong>${puzzle24.success ? "24 点判定成功" : "本次未凑出 24 点"}</strong>
+        <p>${puzzle24.success ? `${puzzle24.formula} = 24，返还 1 次抽卡机会。` : `从点数 ${puzzle24.points.join("、")} 中选 3 张暂时无解。`}</p>
+      </div>
+    ` : ""}
+    ${packData?.discarded ? `<p class="message">已丢弃：${packData.discarded.name}（${packData.discarded.point} 点），未进入卡册。</p>` : ""}
+    <p class="message">本次入册 ${newCount} 张新卡、${duplicateCount} 张重复卡；积分 +${totalScore}，碎片 +${totalFragments}。</p>
     ${rewardHtml(rewards)}
     ${action}
   `;
@@ -253,9 +357,11 @@ function showSharePoster(scene, shareId) {
       <p>我在光仔卡牌里打开了名场面之殿，来一起抽一包。</p>
       <small>分享码：${shareId}</small>
     </div>
-    <p class="message">点击立即转发会调用手机系统分享面板。好友打开链接后，会记录一次分享跳转并发放奖励。</p>
+    <p class="disclaimer compact">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
+    <p class="message">好友打开链接后，会记录一次分享跳转并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发，或生成二维码海报截图分享。</p>
     <div class="share-actions">
-      <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">立即转发给好友</button>
+      <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">转发/分享</button>
+      <button class="secondary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
       <button class="secondary" onclick="openPoster('${shareId}')">生成二维码海报</button>
       <button class="secondary" onclick="copyShareLink('${shareId}')">复制分享链接</button>
     </div>
@@ -266,6 +372,46 @@ function showSharePoster(scene, shareId) {
 
 function shareLink(shareId) {
   return new URL(`./share.html?shareId=${encodeURIComponent(shareId)}`, window.location.href).href;
+}
+
+function shareEnv() {
+  const ua = navigator.userAgent.toLowerCase();
+  if (/micromessenger/.test(ua)) return "wechat";
+  if (/\bqq\//.test(ua) || /mqqbrowser/.test(ua)) return "qq";
+  return "browser";
+}
+
+function openSharePage(shareId) {
+  window.location.href = `./share.html?shareId=${encodeURIComponent(shareId)}&from=owner`;
+}
+
+function showShareGuide(shareId, scene = "invite") {
+  const env = shareEnv();
+  const envName = env === "wechat" ? "微信" : env === "qq" ? "QQ" : "当前浏览器";
+  const shareUrl = shareLink(shareId);
+  $("#modalContent").innerHTML = `
+    <div class="share-card-preview">
+      <p class="eyebrow">${envName}分享方式</p>
+      <h3>用右上角菜单转发</h3>
+      <div class="share-mini-card">
+        <span>分享码</span>
+        <strong>${shareId}</strong>
+      </div>
+      <p>${envName}里如果不能直接弹出好友列表，请先打开可转发页面，再点右上角「...」选择发送给朋友/分享到群。</p>
+    </div>
+    <div class="share-steps">
+      <p><strong>方式一：</strong>打开可转发页面，然后点右上角「...」转发。</p>
+      <p><strong>方式二：</strong>生成二维码海报，截图发给好友或群。</p>
+      <p><strong>方式三：</strong>复制链接，手动粘贴发送。</p>
+    </div>
+    <div class="share-actions">
+      <button class="primary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
+      <button class="secondary" onclick="openPoster('${shareId}')">生成二维码海报</button>
+      <button class="secondary" onclick="copyShareLink('${shareId}')">复制链接</button>
+    </div>
+    <p class="share-link-text">${shareUrl}</p>
+  `;
+  $("#modal").classList.remove("hidden");
 }
 
 async function copyShareLink(shareId) {
@@ -279,6 +425,10 @@ async function copyShareLink(shareId) {
 }
 
 async function nativeShare(shareId, scene = "invite") {
+  if (["wechat", "qq"].includes(shareEnv())) {
+    showShareGuide(shareId, scene);
+    return;
+  }
   const title = {
     invite: "来光仔卡牌收集名场面",
     rank: "我在光仔卡牌冲榜了",
@@ -298,7 +448,7 @@ async function nativeShare(shareId, scene = "invite") {
       if (error?.name === "AbortError") return;
     }
   }
-  await copyShareLink(shareId);
+  showShareGuide(shareId, scene);
 }
 
 function showHelpGuide() {
@@ -306,19 +456,11 @@ function showHelpGuide() {
     <div class="guide">
       <p class="eyebrow">玩法说明</p>
       <h3>拾忆者行动手册</h3>
-      <p class="guide-lead">你的目标是处理策划事件，积累热度、口碑和积分，获得抽卡机会，解锁更多名场面卡牌，并冲上名场面之柱排行榜。</p>
+      <p class="guide-lead">你的主线目标是获得抽卡机会，开启记忆晶核，解锁更多名场面卡牌，并冲上名场面之柱排行榜。</p>
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
-          <p>用于开启记忆晶核。可通过今日事件、积分档位、累计开包返还、分享跳转和时间恢复获得。</p>
-        </div>
-        <div>
-          <strong>热度</strong>
-          <p>代表话题传播声量。热度越高，说明你的运营选择越容易被玩家讨论和转发。</p>
-        </div>
-        <div>
-          <strong>口碑</strong>
-          <p>代表玩家信任。透明沟通、降低负担、尊重体验会提高口碑，口碑太低会影响结局评价。</p>
+          <p>用于开启记忆晶核。每次开包抽 4 张卡，可通过时间恢复、积分档位、累计开包返还和分享跳转获得。</p>
         </div>
         <div>
           <strong>碎片</strong>
@@ -326,20 +468,20 @@ function showHelpGuide() {
         </div>
         <div>
           <strong>积分</strong>
-          <p>排行榜核心指标。抽到新卡、处理事件、积累热度和口碑都会提高积分。</p>
+          <p>排行榜核心指标。抽到新卡会提高积分，稀有度越高积分越多。</p>
         </div>
         <div>
-          <strong>卡牌效果</strong>
-          <p>部分名场面卡不是只收藏，会触发额外效果，例如补偿碎片、失败兜底或额外抽卡。</p>
+          <strong>24 点判定</strong>
+          <p>每次开包得到的 4 张卡都会显示点数。系统自动判断能否用加减乘除凑出 24 点，成功后返还 1 次抽卡机会。</p>
         </div>
       </div>
       <div class="guide-ranking">
         <strong>排行榜怎么算？</strong>
-        <p>排行榜主要按积分排序。想提升排名，就多处理今日事件、获取抽卡次数、解锁高价值卡牌，并利用碎片补齐卡册。</p>
+        <p>排行榜主要按积分排序。想提升排名，就获取更多抽卡次数、解锁高价值新卡，并利用碎片补齐卡册。</p>
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位会奖励抽卡；累计开包达到指定数量也会返还抽卡次数。</p>
+        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位、累计开包达到指定数量、分享跳转和 24 点判定成功都会奖励抽卡次数。</p>
       </div>
     </div>
   `;
@@ -364,15 +506,7 @@ async function loadCards() {
 async function loadProfile() {
   const data = await request("/api/profile");
   state.user = data.user;
-  await loadChallenge();
   render();
-}
-
-async function loadChallenge() {
-  if (!state.token) return;
-  const data = await request("/api/challenge");
-  state.challenge = data.challenge;
-  state.user = data.user;
 }
 
 function render() {
@@ -385,67 +519,13 @@ function render() {
   $("#gameView").classList.remove("hidden");
   $("#nicknameText").textContent = state.user.nickname;
   $("#drawChances").textContent = state.user.drawChances;
-  $("#heat").textContent = state.user.heat || 0;
-  $("#reputation").textContent = state.user.reputation || 0;
   $("#score").textContent = state.user.score;
   $("#fragments").textContent = state.user.fragments;
   $("#collection").textContent = `${Object.keys(state.user.ownedCards).length}/${state.cards.length}`;
   renderTasks();
-  renderChallenge();
   renderSeriesGoals();
   renderAlbum();
   if ($("#rankPage").classList.contains("active")) loadRanking();
-}
-
-function rewardText(rewards = {}) {
-  return [
-    rewards.heat ? `热度 ${rewards.heat > 0 ? "+" : ""}${rewards.heat}` : "",
-    rewards.reputation ? `口碑 ${rewards.reputation > 0 ? "+" : ""}${rewards.reputation}` : "",
-    rewards.fragments ? `碎片 +${rewards.fragments}` : "",
-    rewards.drawChances ? `抽卡 +${rewards.drawChances}` : ""
-  ].filter(Boolean).join(" · ");
-}
-
-function renderChallenge() {
-  const challenge = state.challenge;
-  if (!challenge) {
-    $("#challengeProgress").textContent = "-";
-    $("#challengeBox").innerHTML = `<p class="message">事件加载中...</p>`;
-    return;
-  }
-  $("#challengeProgress").textContent = `${challenge.todayCount}/${challenge.maxDaily}`;
-  if (challenge.completed) {
-    $("#challengeBox").innerHTML = `
-      <div class="challenge-done">
-        <strong>今日事件已处理完</strong>
-        <p>${state.user.plannerTitle}：${state.user.endingText}</p>
-      </div>
-      ${challenge.recentChoices.map(item => `
-        <div class="choice-log">
-          <small>${item.eventTitle}</small>
-          <strong>${item.choiceText}</strong>
-          <span>${rewardText(item.rewards)}</span>
-        </div>
-      `).join("")}
-    `;
-    return;
-  }
-  const event = challenge.event;
-  $("#challengeBox").innerHTML = `
-    <div class="challenge-card">
-      <p class="eyebrow">剩余 ${challenge.remaining} 次处理机会</p>
-      <h4>${event.title}</h4>
-      <p>${event.context}</p>
-      <div class="choice-list">
-        ${event.choices.map((choice, index) => `
-          <button class="choice-button" onclick="chooseChallenge('${event.id}', '${choice.id}')">
-            <b>${String.fromCharCode(65 + index)}</b>
-            <span>${choice.text}</span>
-          </button>
-        `).join("")}
-      </div>
-    </div>
-  `;
 }
 
 function renderTasks() {
@@ -505,10 +585,10 @@ function cardMarkup(card, owned) {
     `;
   }
   return `
-    <article class="card rarity-${card.rarity} ${card.id === "c001" ? "special-album-card" : ""}" onclick="showCardDetail('${card.id}')">
+    <article class="card rarity-${card.rarity}" onclick="showCardDetail('${card.id}')">
       ${cardFace(card, true)}
       <strong>${card.name}</strong>
-      <small>${card.series} · ${card.rarityName}</small>
+      ${cardMeta(card)}
       <p>${card.quote}</p>
     </article>
   `;
@@ -541,7 +621,7 @@ function showCardDetail(cardId) {
       ${owned ? `
         <div class="detail-meta">
           <strong>${card.name}</strong>
-          <span>${card.series} · ${card.rarityName} · 积分 ${card.score}</span>
+          <span>${card.source ? `${card.source} · ` : ""}${card.series} · ${card.rarityName} · 积分 ${card.score}</span>
           <p>${card.quote}</p>
         </div>
       ` : `
@@ -580,40 +660,6 @@ async function exchangeCard(cardId) {
   }
 }
 
-async function chooseChallenge(eventId, choiceId) {
-  try {
-    const data = await request("/api/challenge/choose", {
-      method: "POST",
-      body: JSON.stringify({ eventId, choiceId })
-    });
-    state.user = data.user;
-    state.challenge = data.challenge;
-    render();
-    const outcome = data.outcome;
-    $("#modalContent").innerHTML = `
-      <div class="challenge-result">
-        <p class="eyebrow">事件处理结果</p>
-        <h3>${outcome.eventTitle}</h3>
-        <strong>${outcome.choiceText}</strong>
-        <p>${outcome.result}</p>
-        <div class="reward-chips">
-          ${rewardText(outcome.rewards).split(" · ").filter(Boolean).map(text => `<span>${text}</span>`).join("")}
-        </div>
-        ${outcome.effects.length ? `
-          <div class="effect-list">
-            <strong>卡牌效果触发</strong>
-            ${outcome.effects.map(text => `<p>${text}</p>`).join("")}
-          </div>
-        ` : ""}
-        ${rewardHtml(data.rewards || [])}
-      </div>
-    `;
-    $("#modal").classList.remove("hidden");
-  } catch (error) {
-    toast(error.message);
-  }
-}
-
 async function shareScene(scene) {
   try {
     const data = await request("/api/share/create", {
@@ -628,12 +674,14 @@ async function shareScene(scene) {
 
 window.exchangeCard = exchangeCard;
 window.showCardDetail = showCardDetail;
-window.chooseChallenge = chooseChallenge;
+window.togglePackChoice = togglePackChoice;
+window.submitPackChoice = submitPackChoice;
 window.nextTourStep = nextTourStep;
 window.finishTour = finishTour;
 window.shareScene = shareScene;
 window.nativeShare = nativeShare;
 window.copyShareLink = copyShareLink;
+window.openSharePage = openSharePage;
 window.goShare = shareId => {
   window.location.href = `./share.html?shareId=${encodeURIComponent(shareId)}`;
 };
@@ -652,8 +700,10 @@ async function submitAuth() {
     state.token = data.token;
     state.user = data.user;
     localStorage.setItem("gz_token", state.token);
-    await loadChallenge();
     render();
+    if (data.rewards?.length) {
+      data.rewards.forEach(reward => toast(reward));
+    }
     maybeStartOnboarding();
   } catch (error) {
     $("#authMessage").textContent = error.message;
@@ -670,20 +720,25 @@ async function drawCard() {
     $("#crystalText").textContent = "？";
     $("#drawBtn").textContent = "晶核共鸣中...";
     await new Promise(resolve => setTimeout(resolve, 1050));
+    const previewCard = (data.cards || []).reduce((best, item) => {
+      const score = { normal: 1, rare: 2, epic: 3, legend: 4, hidden: 5 }[item.rarity] || 0;
+      const bestScore = best ? ({ normal: 1, rare: 2, epic: 3, legend: 4, hidden: 5 }[best.rarity] || 0) : -1;
+      return score > bestScore ? item : best;
+    }, null) || { rarity: "normal", rarityName: "候选" };
     $("#packStage").classList.remove("charging");
-    $("#packStage").classList.add("rarity-phase", "burst", `rarity-phase-${data.card.rarity}`);
-    $("#crystal").className = `crystal reveal rarity-glow-${data.card.rarity} rarity-preview-${data.card.rarity}`;
-    $("#crystalText").textContent = data.card.rarityName;
-    $("#drawBtn").textContent = `${data.card.rarityName}卡响应中...`;
+    $("#packStage").classList.add("rarity-phase", "burst", `rarity-phase-${previewCard.rarity}`);
+    $("#crystal").className = `crystal reveal rarity-glow-${previewCard.rarity} rarity-preview-${previewCard.rarity}`;
+    $("#crystalText").textContent = previewCard.rarityName || "开";
+    $("#drawBtn").textContent = "候选卡响应中...";
     await new Promise(resolve => setTimeout(resolve, 900));
-    $("#packStage").classList.remove("rarity-phase", "burst", `rarity-phase-${data.card.rarity}`);
+    $("#packStage").classList.remove("rarity-phase", "burst", `rarity-phase-${previewCard.rarity}`);
     $("#crystal").className = "crystal";
     $("#crystalText").textContent = "开";
     $("#drawBtn").disabled = false;
     $("#drawBtn").textContent = "开包";
     state.user = data.user;
     render();
-    showCardResult(data.card, { ...data.result, rewards: data.rewards || [] });
+    showPackChoiceResult(data);
   } catch (error) {
     $("#packStage").className = "pack-stage";
     $("#crystal").className = "crystal";
@@ -719,7 +774,6 @@ function bind() {
     localStorage.removeItem("gz_token");
     state.token = "";
     state.user = null;
-    state.challenge = null;
     render();
   });
   $$(".tab").forEach(tab => {

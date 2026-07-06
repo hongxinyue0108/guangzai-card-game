@@ -1,10 +1,19 @@
 const API = "";
 const params = new URLSearchParams(window.location.search);
 const shareId = params.get("shareId");
+const ownerPreview = params.get("from") === "owner";
 
 async function visitShare() {
   if (!shareId) {
     document.querySelector("#shareText").textContent = "分享链接缺少 shareId。";
+    return;
+  }
+  if (ownerPreview) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("from");
+    document.querySelector("#shareText").textContent = "这是可转发页面。请点右上角「...」发送给朋友或群。";
+    document.querySelector("#rewardText").textContent = "好友打开你转发的页面后，系统会记录分享跳转并发放奖励。";
+    window.history.replaceState(null, "", cleanUrl.href);
     return;
   }
   try {
