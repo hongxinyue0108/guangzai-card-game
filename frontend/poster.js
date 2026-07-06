@@ -1,6 +1,5 @@
 const params = new URLSearchParams(window.location.search);
 const shareId = params.get("shareId");
-const input = document.querySelector("#targetUrl");
 const qrImage = document.querySelector("#qrImage");
 const returnGame = document.querySelector("#returnGame");
 
@@ -9,7 +8,7 @@ function defaultTargetUrl() {
 }
 
 function renderQr() {
-  const targetUrl = input.value.trim() || defaultTargetUrl();
+  const targetUrl = defaultTargetUrl();
   const qrUrl = new URL("https://api.qrserver.com/v1/create-qr-code/");
   qrUrl.searchParams.set("size", "260x260");
   qrUrl.searchParams.set("margin", "12");
@@ -17,8 +16,6 @@ function renderQr() {
   qrImage.src = qrUrl.href;
 }
 
-input.value = defaultTargetUrl();
-document.querySelector("#refreshQr").addEventListener("click", renderQr);
 returnGame.addEventListener("click", () => {
   window.location.href = sessionStorage.getItem("gz_return_to_game") || "./index.html#homePage";
 });

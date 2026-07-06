@@ -3,6 +3,8 @@ const params = new URLSearchParams(window.location.search);
 const shareId = params.get("shareId");
 const ownerPreview = params.get("from") === "owner";
 const returnGame = document.querySelector("#returnGame");
+const copyCurrentLink = document.querySelector("#copyCurrentLink");
+const shareCurrentPage = document.querySelector("#shareCurrentPage");
 
 async function visitShare() {
   if (!shareId) {
@@ -36,6 +38,31 @@ async function visitShare() {
 }
 
 visitShare();
+copyCurrentLink.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    document.querySelector("#rewardText").textContent = "链接已复制，可以直接粘贴发给好友。";
+  } catch {
+    window.prompt("复制这个链接发送给好友", window.location.href);
+  }
+});
+shareCurrentPage.addEventListener("click", async () => {
+  if (!navigator.share) {
+    document.querySelector("#rewardText").textContent = "当前浏览器不支持直接拉起分享，请点右上角「...」分享，或复制链接发送。";
+    return;
+  }
+  try {
+    await navigator.share({
+      title: "光仔卡牌",
+      text: "来抽一张名场面卡。",
+      url: window.location.href
+    });
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      document.querySelector("#rewardText").textContent = "没有拉起分享时，请点右上角「...」分享，或复制链接发送。";
+    }
+  }
+});
 returnGame.addEventListener("click", () => {
   window.location.href = sessionStorage.getItem("gz_return_to_game") || "./index.html#homePage";
 });

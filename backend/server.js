@@ -24,8 +24,6 @@ const MYSQL_CONFIG = {
 const USE_MYSQL = Boolean(MYSQL_CONFIG.host && MYSQL_CONFIG.user && MYSQL_CONFIG.database);
 const REDIS_URL = process.env.REDIS_URL || "";
 const MAX_DRAW_CHANCES = 15;
-const DRAW_RECOVERY_INTERVAL_MS = 30 * 60 * 1000;
-const MAX_RECOVER_PER_LOGIN = 5;
 const TOKEN_CACHE_TTL_MS = 2 * 60 * 1000;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 const RANKING_CACHE_TTL_SECONDS = 8;
@@ -147,7 +145,6 @@ function isObject(value) {
 }
 
 async function readDb() {
-  if (USE_SUPABASE) return readSupabaseDb();
   if (!fs.existsSync(DB_FILE)) {
     const initial = emptyDb();
     fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2));
@@ -613,20 +610,6 @@ function eventToRow(event) {
   };
 }
 
-async function getPlayerByNickname(nickname) {
-  const rows = await supabaseFetch("players", {
-    query: `?nickname=eq.${encodeURIComponent(nickname)}&select=*&limit=1`
-  });
-  return rowToUser(rows?.[0]);
-}
-
-async function getPlayerById(userId) {
-  const rows = await supabaseFetch("players", {
-    query: `?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`
-  });
-  return rowToUser(rows?.[0]);
-}
-
 function bearerToken(req) {
   const header = req.headers.authorization || "";
   return header.replace(/^Bearer\s+/i, "");
@@ -649,228 +632,6 @@ function cachedUser(token) {
   }
   item.expiresAt = Date.now() + TOKEN_CACHE_TTL_MS;
   return item.user;
-}
-
-async function getUserByToken(req) {
-  const token = bearerToken(req);
-  if (!token) return null;
-  const cached = cachedUser(token);
-  if (cached) return cached;
-  const sessions = await supabaseFetch("sessions", {
-    query: `?token=eq.${encodeURIComponent(token)}&select=player_id&limit=1`
-  });
-  const playerId = sessions?.[0]?.player_id;
-  const user = playerId ? await getPlayerById(playerId) : null;
-  cacheUser(token, user);
-  return user;
-}
-
-async function updatePlayer(user) {
-  await upsert("players", [userToPlayerRow(user)], "id");
-}
-
-async function insertSession(token, userId) {
-  await supabaseFetch("sessions", {
-    method: "POST",
-    body: [{ token, player_id: userId }]
-  });
-}
-
-async function insertEvent(event) {
-  await supabaseFetch("events", {
-    method: "POST",
-    body: [eventToRow(event)]
-  });
-}
-
-function queueEvent(event) {
-  insertEvent(event).catch(error => {
-    console.error("event insert failed:", error.message);
-  });
-}
-
-async function insertDrawRecord(record) {
-  await supabaseFetch("draw_records", {
-    method: "POST",
-    body: [{
-      id: record.id,
-      player_id: record.userId,
-      nickname: record.nickname,
-      card_id: record.cardId,
-      card_name: record.cardName,
-      series: record.series,
-      rarity: record.rarity,
-      rarity_name: record.rarityName,
-      duplicated: record.duplicated,
-      score_gained: record.scoreGained,
-      fragments_gained: record.fragmentsGained,
-      created_at: record.createdAt
-    }]
-  });
-}
-
-async function getRecentDrawRecords(userId, limit = 20) {
-  const rows = await supabaseFetch("draw_records", {
-    query: `?player_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=${limit}`
-  });
-  return (rows || []).map(row => ({
-    id: row.id,
-    userId: row.player_id,
-    nickname: row.nickname,
-    cardId: row.card_id,
-    cardName: row.card_name,
-    series: row.series,
-    rarity: row.rarity,
-    rarityName: row.rarity_name,
-    duplicated: row.duplicated,
-    scoreGained: row.score_gained,
-    fragmentsGained: row.fragments_gained,
-    createdAt: row.created_at
-  }));
-}
-
-async function getTodayUserEvents(userId) {
-  const start = `${today()}T00:00:00.000Z`;
-  const rows = await supabaseFetch("events", {
-    query: `?player_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(start)}&select=*`
-  });
-  return (rows || []).map(row => ({
-    id: row.id,
-    type: row.type,
-    userId: row.player_id,
-    ownerId: row.payload?.ownerId || row.player_id,
-    shareId: row.share_id,
-    cardId: row.card_id,
-    scene: row.scene,
-    duplicated: row.duplicated,
-    rewarded: row.rewarded,
-    createdAt: row.created_at,
-    payload: row.payload || {}
-  }));
-}
-
-async function userViewFromSupabase(user) {
-  const [drawRecords, events] = await Promise.all([
-    getRecentDrawRecords(user.id),
-    getTodayUserEvents(user.id)
-  ]);
-  return userView(user, { drawRecords, events });
-}
-
-async function userViewWithTodayEvents(user) {
-  const events = await getTodayUserEvents(user.id);
-  return userView(user, { drawRecords: [], events });
-}
-
-async function getShareById(shareId) {
-  const rows = await supabaseFetch("shares", {
-    query: `?id=eq.${encodeURIComponent(shareId)}&select=*&limit=1`
-  });
-  const row = rows?.[0];
-  if (!row) return null;
-  return {
-    id: row.id,
-    userId: row.player_id,
-    nickname: row.nickname,
-    scene: row.scene,
-    visits: row.visits,
-    rewarded: row.rewarded,
-    createdAt: row.created_at
-  };
-}
-
-async function insertShare(share) {
-  await upsert("shares", [{
-    id: share.id,
-    player_id: share.userId,
-    nickname: share.nickname,
-    scene: share.scene,
-    visits: share.visits,
-    rewarded: share.rewarded,
-    created_at: share.createdAt
-  }], "id");
-}
-
-async function updateShare(share) {
-  await insertShare(share);
-}
-
-async function getRankingPlayers() {
-  const rows = await supabaseFetch("players", {
-    query: "?select=id,nickname,score,owned_cards&order=score.desc&limit=50"
-  });
-  return rows || [];
-}
-
-async function upsert(table, rows, conflict) {
-  if (!rows.length) return;
-  await supabaseFetch(table, {
-    method: "POST",
-    query: `?on_conflict=${conflict}`,
-    headers: { Prefer: "resolution=merge-duplicates" },
-    body: rows
-  });
-}
-
-async function writeSupabaseDb(db) {
-  await upsert("players", db.users.map(user => ({
-    id: user.id,
-    nickname: user.nickname,
-    password_hash: user.passwordHash,
-    score: user.score,
-    fragments: user.fragments,
-    draw_chances: user.drawChances,
-    last_recovered_at: user.lastRecoveredAt,
-    last_login_at: user.lastLoginAt,
-    opened_packs: user.openedPacks,
-    owned_cards: user.ownedCards || {},
-    share_rewards: user.shareRewards || {},
-    task_rewards: user.taskRewards || {},
-    series_rewards: user.seriesRewards || {},
-    milestone_rewards: user.milestoneRewards || {},
-    challenge_state: user.challengeState || {},
-    effect_state: user.effectState || {},
-    updated_at: new Date().toISOString()
-  })), "id");
-  await upsert("sessions", Object.entries(db.sessions).map(([token, userId]) => ({
-    token,
-    player_id: userId
-  })), "token");
-  await upsert("shares", db.shares.map(share => ({
-    id: share.id,
-    player_id: share.userId,
-    nickname: share.nickname,
-    scene: share.scene,
-    visits: share.visits,
-    rewarded: share.rewarded,
-    created_at: share.createdAt
-  })), "id");
-  await upsert("draw_records", db.drawRecords.map(record => ({
-    id: record.id,
-    player_id: record.userId,
-    nickname: record.nickname,
-    card_id: record.cardId,
-    card_name: record.cardName,
-    series: record.series,
-    rarity: record.rarity,
-    rarity_name: record.rarityName,
-    duplicated: record.duplicated,
-    score_gained: record.scoreGained,
-    fragments_gained: record.fragmentsGained,
-    created_at: record.createdAt
-  })), "id");
-  await upsert("events", db.events.map(event => ({
-    id: event.id,
-    type: event.type,
-    player_id: event.userId || event.ownerId || null,
-    share_id: event.shareId || null,
-    card_id: event.cardId || null,
-    scene: event.scene || null,
-    duplicated: event.duplicated ?? null,
-    rewarded: event.rewarded ?? null,
-    payload: { ...event.payload, ownerId: event.ownerId || event.payload?.ownerId },
-    created_at: event.createdAt
-  })), "id");
 }
 
 function json(res, status, data) {
@@ -942,7 +703,12 @@ function normalizeAccount(value) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
 }
 
 function dayIndex(date = today()) {
@@ -962,7 +728,6 @@ function userView(user, db = null) {
     drawChances: user.drawChances,
     maxDrawChances: MAX_DRAW_CHANCES,
     lastRecoveredAt: user.lastRecoveredAt,
-    recoveryIntervalMs: DRAW_RECOVERY_INTERVAL_MS,
     openedPacks: user.openedPacks,
     ownedCards: user.ownedCards,
     shareRewards: user.shareRewards || {},
@@ -1004,9 +769,9 @@ function addDrawChances(user, amount) {
 }
 
 function dailyLoginReward(user, now = new Date()) {
-  const today = now.toISOString().split("T")[0];
-  const lastLoginDate = user.lastLoginAt?.split("T")[0];
-  if (!user.lastLoginAt || lastLoginDate !== today) {
+  const currentDate = today();
+  const lastLoginDate = user.lastLoginAt ? todayOf(user.lastLoginAt) : null;
+  if (!user.lastLoginAt || lastLoginDate !== currentDate) {
     ensureUserShape(user);
     const before = user.drawChances;
     addDrawChances(user, 3);
@@ -1016,26 +781,19 @@ function dailyLoginReward(user, now = new Date()) {
   return 0;
 }
 
+function todayOf(value) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
+}
+
 function recoverDrawChances(user, now = new Date()) {
   ensureUserShape(user);
-  if (user.drawChances >= MAX_DRAW_CHANCES) {
-    user.lastRecoveredAt = now.toISOString();
-    return 0;
-  }
-  const lastTime = Date.parse(user.lastRecoveredAt);
-  if (!Number.isFinite(lastTime)) {
-    user.lastRecoveredAt = now.toISOString();
-    return 0;
-  }
-  const elapsed = now.getTime() - lastTime;
-  if (elapsed < DRAW_RECOVERY_INTERVAL_MS) return 0;
-  const recoverable = Math.floor(elapsed / DRAW_RECOVERY_INTERVAL_MS);
-  const gained = Math.min(recoverable, MAX_DRAW_CHANCES - user.drawChances, MAX_RECOVER_PER_LOGIN);
-  user.drawChances += gained;
-  user.lastRecoveredAt = user.drawChances >= MAX_DRAW_CHANCES
-    ? now.toISOString()
-    : new Date(lastTime + gained * DRAW_RECOVERY_INTERVAL_MS).toISOString();
-  return gained;
+  user.lastRecoveredAt ||= now.toISOString();
+  return 0;
 }
 
 function currentUser(req, db) {
@@ -1287,7 +1045,7 @@ function taskStatus(user, db = null) {
       title: "完成 1 次分享跳转",
       progress: Math.min(shareJumpCount, 1),
       target: 1,
-      reward: "+20 碎片",
+      reward: "+1 抽卡",
       claimed: Boolean(user.taskRewards[`${date}:share1`])
     },
     {
@@ -1307,7 +1065,7 @@ function applyDailyTasks(user, db) {
   const rewards = [];
   const rules = [
     { id: "draw3", done: todayEvents(db, event => event.type === "pack_open" && event.userId === user.id).length >= 3, drawChances: 1, text: "今日抽 3 次卡完成，奖励 1 次抽卡" },
-    { id: "share1", done: todayEvents(db, event => event.type === "share_visit" && event.ownerId === user.id).length >= 1, fragments: 20, text: "分享跳转任务完成，奖励 20 碎片" },
+    { id: "share1", done: todayEvents(db, event => event.type === "share_visit" && event.ownerId === user.id).length >= 1, drawChances: 1, text: "分享跳转任务完成，奖励 1 次抽卡" },
     { id: "collect16", done: Object.keys(user.ownedCards).length >= 16, fragments: 30, text: "收集 16 张不同卡完成，奖励 30 碎片" }
   ];
   for (const rule of rules) {
@@ -1555,28 +1313,24 @@ async function handleMySQL(req, res, url) {
       if (!owner) return json(res, 404, { message: "分享者不存在" });
       recoverDrawChances(owner);
       share.visits += 1;
-      let reward = null;
-      const key = `${today()}:${share.scene}`;
-      if (!owner.shareRewards[key]) owner.shareRewards[key] = 0;
-      if (owner.shareRewards[key] < 1) {
-        owner.shareRewards[key] += 1;
-        addDrawChances(owner, 1);
-        share.rewarded = true;
-        reward = { drawChances: 1, message: "分享跳转奖励已到账" };
-      }
-      await upsertMysqlShare(share);
       const shareEvent = {
         type: "share_visit",
         shareId: share.id,
         ownerId: owner.id,
         scene: share.scene,
-        rewarded: Boolean(reward),
+        rewarded: false,
         createdAt: new Date().toISOString()
       };
-      queueMysqlEvent(shareEvent);
       const events = await getMysqlTodayUserEvents(owner.id);
       events.push(shareEvent);
       const rewards = [...applyDailyTasks(owner, { events, drawRecords: [] }), ...applyMilestoneRewards(owner)];
+      const reward = rewards.some(text => text.includes("分享跳转任务"))
+        ? { drawChances: 1, message: "分享跳转任务完成，奖励已到账" }
+        : null;
+      share.rewarded = Boolean(reward);
+      shareEvent.rewarded = Boolean(reward);
+      await upsertMysqlShare(share);
+      queueMysqlEvent(shareEvent);
       await updateMysqlPlayer(owner);
       return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
     }
@@ -1623,288 +1377,12 @@ async function handleMySQL(req, res, url) {
   }
 }
 
-async function handleSupabase(req, res, url) {
-  try {
-    if (req.method === "GET" && url.pathname === "/api/cards") {
-      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/register") {
-      const body = await parseBody(req);
-      const password = String(body.password || "");
-      const nickname = normalizeAccount(body.nickname || body.username);
-      if (!/^[a-z0-9_\u4e00-\u9fa5]{2,18}$/i.test(nickname) || password.length < 3) {
-        return json(res, 400, { message: "账号需 2-18 位，可用中文、字母、数字、下划线；密码至少 3 位" });
-      }
-      if (await getPlayerByNickname(nickname)) {
-        return json(res, 409, { message: "这个名字已经被注册了，要不再换一个捏" });
-      }
-      const user = {
-        id: id("usr"),
-        passwordHash: hash(password),
-        nickname,
-        score: 0,
-        fragments: 0,
-        drawChances: 3,
-        lastRecoveredAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-        openedPacks: 0,
-        ownedCards: {},
-        shareRewards: {},
-        taskRewards: {},
-        seriesRewards: {},
-        milestoneRewards: { score: {}, packs: {} },
-        challengeState: {},
-        effectState: {}
-      };
-      const token = id("tok");
-      await updatePlayer(user);
-      await insertSession(token, user.id);
-      cacheUser(token, user);
-      queueEvent({ type: "register", userId: user.id });
-      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/login") {
-      const body = await parseBody(req);
-      const nickname = normalizeAccount(body.nickname || body.username);
-      const user = await getPlayerByNickname(nickname);
-      if (!user || user.passwordHash !== hash(String(body.password || ""))) {
-        return json(res, 401, { message: "账号或密码错误" });
-      }
-      const token = id("tok");
-      recoverDrawChances(user);
-      const loginReward = dailyLoginReward(user);
-      await updatePlayer(user);
-      await insertSession(token, user.id);
-      cacheUser(token, user);
-      queueEvent({ type: "login", userId: user.id });
-      const rewards = loginReward ? [`每日登录奖励 +${loginReward} 抽卡机会`] : [];
-      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }), rewards });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/profile") {
-      const user = await getUserByToken(req);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      const recovered = recoverDrawChances(user);
-      const events = await getTodayUserEvents(user.id);
-      const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
-      if (recovered || rewards.length) await updatePlayer(user);
-      return json(res, 200, { user: await userViewFromSupabase(user), rewards });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/draw") {
-      const user = await getUserByToken(req);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      recoverDrawChances(user);
-      if (user.challengeState.pendingPack) {
-        return json(res, 200, {
-          pendingPackId: user.challengeState.pendingPack.id,
-          cards: publicPackSlots(user.challengeState.pendingPack.slots),
-          user: userView(user, { drawRecords: [], events: [] })
-        });
-      }
-      if (user.drawChances <= 0) return json(res, 400, { message: "抽卡次数不足" });
-      user.drawChances -= 1;
-      user.openedPacks += 1;
-      const pack = createPendingPack(user, 4);
-      await updatePlayer(user);
-      return json(res, 200, {
-        pendingPackId: pack.id,
-        cards: publicPackSlots(pack.slots),
-        user: userView(user, { drawRecords: [], events: [] })
-      });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/draw/choose") {
-      const user = await getUserByToken(req);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      recoverDrawChances(user);
-      const body = await parseBody(req);
-      const pack = settlePendingPack(user, body.selectedSlotIds);
-      if (pack.error) return json(res, 400, { message: pack.error });
-      const drawEvents = pack.draws.map(item => ({
-        type: "draw",
-        userId: user.id,
-        cardId: item.card.id,
-        duplicated: item.result.duplicated,
-        createdAt: item.drawRecord.createdAt
-      }));
-      drawEvents.forEach(event => queueEvent(event));
-      queueEvent({ type: "pack_open", userId: user.id, createdAt: pack.draws[0]?.drawRecord?.createdAt });
-      const [events] = await Promise.all([
-        getTodayUserEvents(user.id),
-        ...pack.draws.map(item => insertDrawRecord(item.drawRecord))
-      ]);
-      events.push(...drawEvents);
-      const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
-      if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
-      await updatePlayer(user);
-      return json(res, 200, {
-        card: { ...pack.highlight.card, point: pack.highlight.point },
-        result: pack.highlight.result,
-        drawRecord: pack.highlight.drawRecord,
-        cards: pack.draws.map(item => ({ ...item.card, slotId: item.slotId, point: item.point })),
-        discarded: pack.discarded ? { ...pack.discarded.card, slotId: pack.discarded.slotId, point: pack.discarded.point } : null,
-        results: pack.draws.map(item => item.result),
-        drawRecords: pack.draws.map(item => item.drawRecord),
-        puzzle24: pack.puzzle24,
-        rewards,
-        user: userView(user, { drawRecords: pack.draws.map(item => item.drawRecord), events })
-      });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/exchange") {
-      const user = await getUserByToken(req);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      recoverDrawChances(user);
-      const body = await parseBody(req);
-      const card = CARDS.find(item => item.id === body.cardId);
-      if (!card) return json(res, 404, { message: "卡牌不存在" });
-      if (user.ownedCards[card.id]) return json(res, 400, { message: "你已经拥有这张卡" });
-      if (user.fragments < card.price) return json(res, 400, { message: "碎片不足" });
-      user.fragments -= card.price;
-      user.ownedCards[card.id] = 1;
-      user.score += card.score;
-      queueEvent({ type: "exchange", userId: user.id, cardId: card.id });
-      const events = await getTodayUserEvents(user.id);
-      const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
-      await updatePlayer(user);
-      return json(res, 200, { card, rewards, user: userView(user, { drawRecords: [], events }) });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/share/create") {
-      const user = await getUserByToken(req);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      const recovered = recoverDrawChances(user);
-      const body = await parseBody(req);
-      const scene = String(body.scene || "invite");
-      const share = {
-        id: id("shr"),
-        userId: user.id,
-        nickname: user.nickname,
-        scene,
-        visits: 0,
-        rewarded: false,
-        createdAt: new Date().toISOString()
-      };
-      await insertShare(share);
-      queueEvent({ type: "share_create", userId: user.id, shareId: share.id, scene });
-      if (recovered) await updatePlayer(user);
-      return json(res, 200, { share, shareUrl: `../frontend/share.html?shareId=${share.id}` });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/share/visit") {
-      const body = await parseBody(req);
-      const share = await getShareById(String(body.shareId || ""));
-      if (!share) return json(res, 404, { message: "分享不存在" });
-      const owner = await getPlayerById(share.userId);
-      if (!owner) return json(res, 404, { message: "分享者不存在" });
-      recoverDrawChances(owner);
-      share.visits += 1;
-      let reward = null;
-      const key = `${today()}:${share.scene}`;
-      if (!owner.shareRewards[key]) owner.shareRewards[key] = 0;
-      if (owner.shareRewards[key] < 1) {
-        owner.shareRewards[key] += 1;
-        addDrawChances(owner, 1);
-        share.rewarded = true;
-        reward = { drawChances: 1, message: "分享跳转奖励已到账" };
-      }
-      await updateShare(share);
-      const shareEvent = {
-        type: "share_visit",
-        shareId: share.id,
-        ownerId: owner.id,
-        scene: share.scene,
-        rewarded: Boolean(reward),
-        createdAt: new Date().toISOString()
-      };
-      queueEvent(shareEvent);
-      const events = await getTodayUserEvents(owner.id);
-      events.push(shareEvent);
-      const rewards = [...applyDailyTasks(owner, { events, drawRecords: [] }), ...applyMilestoneRewards(owner)];
-      await updatePlayer(owner);
-      return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/ranking") {
-      const players = await getRankingPlayers();
-      const playerRows = players.map(row => {
-        const user = rowToUser(row);
-        return {
-          player: true,
-          userId: row.id,
-          nickname: row.nickname,
-          score: row.score || 0,
-          collected: Object.keys(row.owned_cards || {}).length,
-          total: CARDS.length
-        };
-      });
-      const ranking = [...playerRows, ...NPC_RANKING.map(npc => ({ ...npc, total: CARDS.length, player: false }))]
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 50)
-        .map((row, index) => ({ rank: index + 1, ...row }));
-      return json(res, 200, { ranking });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/stats") {
-      const [users, shares, visits, draws] = await Promise.all([
-        supabaseFetch("players", { query: "?select=id" }),
-        supabaseFetch("shares", { query: "?select=id" }),
-        supabaseFetch("events", { query: "?type=eq.share_visit&select=id" }),
-        supabaseFetch("draw_records", { query: "?select=id" })
-      ]);
-      return json(res, 200, {
-        users: users?.length || 0,
-        shares: shares?.length || 0,
-        visits: visits?.length || 0,
-        draws: draws?.length || 0
-      });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/users") {
-      const players = await supabaseFetch("players", {
-        query: "?select=id,nickname,score,fragments,draw_chances,opened_packs,owned_cards&order=created_at.desc"
-      });
-      const users = await Promise.all((players || []).map(async row => ({
-        id: row.id,
-        nickname: row.nickname,
-        score: row.score || 0,
-        fragments: row.fragments || 0,
-        drawChances: row.draw_chances || 0,
-        openedPacks: row.opened_packs || 0,
-        collected: Object.keys(row.owned_cards || {}).length,
-        drawRecords: await getRecentDrawRecords(row.id, 50)
-      })));
-      return json(res, 200, { users });
-    }
-
-    return json(res, 404, { message: "接口不存在" });
-  } catch (error) {
-    return json(res, 500, { message: "服务器错误", detail: error.message });
-  }
-}
-
 async function handle(req, res) {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res, url);
   if (USE_MYSQL) return handleMySQL(req, res, url);
-  if (USE_SUPABASE) return handleSupabase(req, res, url);
   const db = await readDb();
 
   try {
@@ -2072,17 +1550,14 @@ async function handle(req, res) {
       if (!owner) return json(res, 404, { message: "分享者不存在" });
       recoverDrawChances(owner);
       share.visits += 1;
-      let reward = null;
-      const key = `${today()}:${share.scene}`;
-      if (!owner.shareRewards[key]) owner.shareRewards[key] = 0;
-      if (owner.shareRewards[key] < 1) {
-        owner.shareRewards[key] += 1;
-        addDrawChances(owner, 1);
-        share.rewarded = true;
-        reward = { drawChances: 1, message: "分享跳转奖励已到账" };
-      }
-      record(db, { type: "share_visit", shareId: share.id, ownerId: owner.id, scene: share.scene, rewarded: Boolean(reward) });
+      const shareEvent = { type: "share_visit", shareId: share.id, ownerId: owner.id, scene: share.scene, rewarded: false };
+      db.events.push({ id: id("evt"), createdAt: new Date().toISOString(), ...shareEvent });
       const rewards = [...applyDailyTasks(owner, db), ...applyMilestoneRewards(owner)];
+      const reward = rewards.some(text => text.includes("分享跳转任务"))
+        ? { drawChances: 1, message: "分享跳转任务完成，奖励已到账" }
+        : null;
+      share.rewarded = Boolean(reward);
+      db.events[db.events.length - 1].rewarded = Boolean(reward);
       await writeDb(db);
       return json(res, 200, { share, owner: { nickname: owner.nickname }, reward, taskRewards: rewards });
     }

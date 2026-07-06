@@ -125,7 +125,7 @@ function finishIntro(sceneTimer = null) {
 
 function buildTourSteps() {
   return [
-    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。每次开包抽 4 张卡，它会随时间恢复，也能通过积分档位、累计开包和分享获得。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。每日首次登录会获得 3 次，也能通过分享跳转、积分档位、累计开包和 24 点成功获得。" },
     { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，达到积分档位还会奖励抽卡次数。" },
     { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。" },
     { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
@@ -146,6 +146,7 @@ function startTour(force = false) {
   if (!state.user || (!force && localStorage.getItem(tourKey()))) return;
   showPage("homePage");
   document.body.classList.add("tour-active");
+  document.body.classList.add("tour-hide-tabs");
   $("#modal").classList.add("hidden");
   state.tourSteps = buildTourSteps();
   state.tourIndex = 0;
@@ -153,9 +154,15 @@ function startTour(force = false) {
   renderTourStep();
 }
 
+function updateTourTabVisibility(step) {
+  const shouldShowTabs = ["album", "rank"].includes(step.key);
+  document.body.classList.toggle("tour-hide-tabs", !shouldShowTabs);
+}
+
 function renderTourStep() {
   const step = state.tourSteps[state.tourIndex];
   if (!step) return finishTour();
+  updateTourTabVisibility(step);
   if (step.key === "album") showPage("albumPage");
   if (step.key === "rank") showPage("rankPage");
   const target = document.querySelector(`[data-tour="${step.key}"]`);
@@ -213,6 +220,7 @@ function finishTour() {
   localStorage.setItem(tourKey(), "1");
   $("#tourOverlay").classList.add("hidden");
   document.body.classList.remove("tour-active");
+  document.body.classList.remove("tour-hide-tabs");
 }
 
 function rewardHtml(rewards = []) {
@@ -301,8 +309,7 @@ async function submitPackChoice() {
     });
     state.pendingPack = null;
     state.selectedPackSlots = [];
-    state.user = data.user;
-    render();
+    applyServerUser(data.user);
     showCardResult(data.card, { ...data.result, rewards: data.rewards || [] }, data);
   } catch (error) {
     toast(error.message);
@@ -372,11 +379,10 @@ function showSharePoster(scene, shareId) {
       <small>分享码：${shareId}</small>
     </div>
     <p class="disclaimer compact">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
-    <p class="message">好友打开链接后，会记录一次分享跳转并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发，或生成二维码海报截图分享。</p>
+    <p class="message">好友打开链接后，会记录一次分享跳转并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发。</p>
     <div class="share-actions">
       <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">转发/分享</button>
       <button class="secondary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
-      <button class="secondary" onclick="openPoster('${shareId}')">生成二维码海报</button>
       <button class="secondary" onclick="copyShareLink('${shareId}')">复制分享链接</button>
     </div>
     <p class="share-link-text">${shareUrl}</p>
@@ -424,12 +430,10 @@ function showShareGuide(shareId, scene = "invite") {
     </div>
     <div class="share-steps">
       <p><strong>方式一：</strong>打开可转发页面，然后点右上角「...」转发。</p>
-      <p><strong>方式二：</strong>生成二维码海报，截图发给好友或群。</p>
-      <p><strong>方式三：</strong>复制链接，手动粘贴发送。</p>
+      <p><strong>方式二：</strong>复制链接，手动粘贴发送。</p>
     </div>
     <div class="share-actions">
       <button class="primary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
-      <button class="secondary" onclick="openPoster('${shareId}')">生成二维码海报</button>
       <button class="secondary" onclick="copyShareLink('${shareId}')">复制链接</button>
     </div>
     <p class="share-link-text">${shareUrl}</p>
@@ -448,10 +452,6 @@ async function copyShareLink(shareId) {
 }
 
 async function nativeShare(shareId, scene = "invite") {
-  if (["wechat", "qq"].includes(shareEnv())) {
-    showShareGuide(shareId, scene);
-    return;
-  }
   const title = {
     invite: "来光仔卡牌收集名场面",
     rank: "我在光仔卡牌冲榜了",
@@ -483,7 +483,7 @@ function showHelpGuide() {
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
-          <p>用于开启记忆晶核。每次开包抽 4 张卡，可通过时间恢复、积分档位、累计开包返还和分享跳转获得。</p>
+          <p>用于开启记忆晶核。每日首次登录获得 3 次，也可通过分享跳转、积分档位、累计开包返还和 24 点成功获得。</p>
         </div>
         <div>
           <strong>积分</strong>
@@ -509,7 +509,7 @@ function showHelpGuide() {
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>每 30 分钟恢复 1 次，最多恢复到 15 次；积分达到指定档位、累计开包达到指定数量、分享跳转，以及选中的 3 张卡成功凑出 24 点都会奖励抽卡次数。</p>
+        <p>每日首次登录获得 3 次；积分达到指定档位、累计开包达到指定数量、每日首次分享跳转，以及选中的 3 张卡成功凑出 24 点都会奖励抽卡次数。</p>
       </div>
     </div>
   `;
@@ -533,8 +533,35 @@ async function loadCards() {
 
 async function loadProfile() {
   const data = await request("/api/profile");
-  state.user = data.user;
+  applyServerUser(data.user);
+}
+
+function applyServerUser(user) {
+  if (!user) return;
+  state.user = user;
   render();
+}
+
+let profileSyncing = false;
+
+async function syncProfile({ silent = true } = {}) {
+  if (!state.token || profileSyncing) return;
+  profileSyncing = true;
+  try {
+    const data = await request("/api/profile");
+    applyServerUser(data.user);
+    if (!silent && data.rewards?.length) data.rewards.forEach(reward => toast(reward));
+  } catch (error) {
+    if (!silent) toast(error.message);
+    if (/请先登录|401/.test(error.message)) {
+      localStorage.removeItem("gz_token");
+      state.token = "";
+      state.user = null;
+      render();
+    }
+  } finally {
+    profileSyncing = false;
+  }
 }
 
 function render() {
@@ -683,9 +710,8 @@ async function exchangeCard(cardId) {
       method: "POST",
       body: JSON.stringify({ cardId })
     });
-    state.user = data.user;
     toast(`兑换成功：${data.card.name}${rewardHtml(data.rewards)}`);
-    render();
+    applyServerUser(data.user);
     showCardDetail(cardId);
   } catch (error) {
     toast(error.message);
@@ -732,9 +758,8 @@ async function submitAuth() {
       body: JSON.stringify({ nickname, password })
     });
     state.token = data.token;
-    state.user = data.user;
+    applyServerUser(data.user);
     localStorage.setItem("gz_token", state.token);
-    render();
     if (data.rewards?.length) {
       data.rewards.forEach(reward => toast(reward));
     }
@@ -749,6 +774,7 @@ async function drawCard() {
     $("#drawBtn").disabled = true;
     $("#drawBtn").textContent = "校验中...";
     const data = await request("/api/draw", { method: "POST" });
+    applyServerUser(data.user);
     $("#packStage").classList.add("charging");
     $("#crystal").classList.add("opening");
     $("#crystalText").textContent = "";
@@ -770,8 +796,6 @@ async function drawCard() {
     $("#crystalText").textContent = "";
     $("#drawBtn").disabled = false;
     $("#drawBtn").textContent = "开包";
-    state.user = data.user;
-    render();
     showPackChoiceResult(data);
   } catch (error) {
     $("#packStage").className = "pack-stage";
@@ -788,18 +812,7 @@ function bind() {
   $("#showRegister").addEventListener("click", () => setAuthMode("register"));
   $("#authSubmit").addEventListener("click", submitAuth);
   $("#drawBtn").addEventListener("click", drawCard);
-  $("#albumInviteBtn").addEventListener("click", async () => {
-    try {
-      const data = await request("/api/share/create", {
-        method: "POST",
-        body: JSON.stringify({ scene: "invite" })
-      });
-      rememberShareReturn();
-      window.location.href = `./poster.html?shareId=${encodeURIComponent(data.share.id)}`;
-    } catch (error) {
-      toast(error.message);
-    }
-  });
+  $("#albumInviteBtn").addEventListener("click", () => shareScene("invite"));
   $("#shareRankBtn").addEventListener("click", () => shareScene("rank"));
   $("#albumSeries").addEventListener("change", renderAlbum);
   $("#closeModal").addEventListener("click", () => $("#modal").classList.add("hidden"));
@@ -813,6 +826,11 @@ function bind() {
   });
   $$(".tab").forEach(tab => {
     tab.addEventListener("click", () => showPage(tab.dataset.page));
+  });
+  window.addEventListener("pageshow", () => syncProfile());
+  window.addEventListener("focus", () => syncProfile());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncProfile();
   });
 }
 

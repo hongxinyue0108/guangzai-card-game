@@ -1749,6 +1749,7 @@ button:disabled {
   margin-top: 38px;
   padding: 24px 18px;
   text-align: center;
+  color: #fff;
 }
 
 .share-poster {
@@ -1757,6 +1758,19 @@ button:disabled {
   border-radius: 8px;
   padding: 18px;
   background: #242b40;
+}
+
+.share-poster h2 {
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(6, 28, 88, 0.45);
+}
+
+.share-page .eyebrow,
+.share-page h1,
+.share-page p,
+.share-page .message,
+.share-page .share-disclaimer {
+  color: #fff;
 }
 
 .poster-crystal {
@@ -2062,7 +2076,7 @@ button:disabled {
 }
 
 body.intro-active .tabs,
-body.tour-active .tabs {
+body.tour-hide-tabs .tabs {
   display: none;
 }
 

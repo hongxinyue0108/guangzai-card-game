@@ -57,7 +57,7 @@ REDIS_URL=redis://127.0.0.1:6379
 
 注意：`.env` 不要提交到 Gitee 或 GitHub。
 
-只要 `.env` 里配置了 `MYSQL_HOST`、`MYSQL_USER`、`MYSQL_DATABASE`，后端就会优先使用 MySQL，不再走 Supabase 或 `db.json`。
+只要 `.env` 里配置了 `MYSQL_HOST`、`MYSQL_USER`、`MYSQL_DATABASE`，后端就会使用 MySQL；没有配置 MySQL 时才会退回本地 `db.json`。
 
 ## 腾讯云部署思路
 
