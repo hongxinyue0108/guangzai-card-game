@@ -125,7 +125,7 @@ function finishIntro(sceneTimer = null) {
 
 function buildTourSteps() {
   return [
-    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。每日首次登录会获得 3 次，也能通过分享跳转、积分档位、累计开包和 24 点成功获得。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也能通过点击分享入口、积分档位、累计开包和 24 点成功获得。" },
     { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，达到积分档位还会奖励抽卡次数。" },
     { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。" },
     { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
@@ -324,7 +324,7 @@ function showCardResult(card, result, packData = null) {
   const rewards = result.rewards || [];
   const hasShareCard = cards.some(item => ["rare", "epic", "legend", "hidden"].includes(item.rarity));
   const action = hasShareCard
-    ? `<button class="secondary" onclick="shareScene('card')">分享这张卡 · 跳转领奖</button>`
+    ? `<button class="secondary" onclick="shareScene('card')">分享这张卡 · 领取任务奖励</button>`
     : "";
   const totalScore = results.reduce((sum, item) => sum + (item.scoreGained || 0), 0);
   const totalFragments = results.reduce((sum, item) => sum + (item.fragmentsGained || 0), 0);
@@ -379,7 +379,7 @@ function showSharePoster(scene, shareId) {
       <small>分享码：${shareId}</small>
     </div>
     <p class="disclaimer compact">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
-    <p class="message">好友打开链接后，会记录一次分享跳转并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发。</p>
+    <p class="message">点击分享入口会完成每日分享任务并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发。</p>
     <div class="share-actions">
       <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">转发/分享</button>
       <button class="secondary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
@@ -483,7 +483,7 @@ function showHelpGuide() {
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
-          <p>用于开启记忆晶核。每日首次登录获得 3 次，也可通过分享跳转、积分档位、累计开包返还和 24 点成功获得。</p>
+          <p>用于开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也可通过点击分享入口、积分档位、累计开包返还和 24 点成功获得。</p>
         </div>
         <div>
           <strong>积分</strong>
@@ -509,7 +509,11 @@ function showHelpGuide() {
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>每日首次登录获得 3 次；积分达到指定档位、累计开包达到指定数量、每日首次分享跳转，以及选中的 3 张卡成功凑出 24 点都会奖励抽卡次数。</p>
+        <p>注册初始获得 3 次；之后每日首次登录 +3。每天第一次点击任意分享入口、累计开包 3 次、积分/开包里程碑、以及选中的 3 张卡成功凑出 24 点，都会奖励抽卡次数。</p>
+      </div>
+      <div class="guide-ranking">
+        <strong>里程碑奖励</strong>
+        <p>积分达到 100、260、520、900，或累计开包达到 5、10、20、35，会自动领取阶段奖励；部分档位还会附带碎片。</p>
       </div>
     </div>
   `;
@@ -724,6 +728,8 @@ async function shareScene(scene) {
       method: "POST",
       body: JSON.stringify({ scene })
     });
+    applyServerUser(data.user);
+    (data.rewards || []).forEach(reward => toast(reward));
     showSharePoster(scene, data.share.id);
   } catch (error) {
     toast(error.message);
