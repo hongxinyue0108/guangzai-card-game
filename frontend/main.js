@@ -268,9 +268,12 @@ function showPackChoiceResult(packData) {
       <h3>选择 3 张放入卡册</h3>
       <p class="message">点数会用于 24 点判定。未选择的 1 张会被丢弃，不进入卡册。</p>
       <div class="pack-result-grid">
-        ${cards.map(item => `
+        ${cards.map(item => {
+          const owned = Boolean(state.user?.ownedCards?.[item.id]);
+          return `
           <button class="card result-card pack-result-card pack-choice-card rarity-${item.rarity}" onclick="togglePackChoice('${item.slotId}')">
             <span class="point-badge">${item.point || "?"}</span>
+            <span class="ownership-mark ${owned ? "owned" : "new"}">${owned ? "已拥有" : "NEW"}</span>
             <span class="choice-mark">未选</span>
             <div class="card-shine"></div>
             ${cardFace(item)}
@@ -278,7 +281,8 @@ function showPackChoiceResult(packData) {
             ${cardMeta(item)}
             <p>${item.quote}</p>
           </button>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
     </div>
     <button id="confirmPackChoiceBtn" class="primary large" disabled onclick="submitPackChoice()">确认入册 0/3</button>
