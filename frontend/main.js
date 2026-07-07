@@ -397,8 +397,7 @@ function showSharePoster(scene, shareId) {
     <p class="disclaimer compact">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
     <p class="message">点击分享入口会完成每日分享任务并发放奖励。微信/QQ 内置浏览器请按页面提示用右上角菜单转发。</p>
     <div class="share-actions">
-      <button class="primary" onclick="nativeShare('${shareId}', '${scene}')">转发/分享</button>
-      <button class="secondary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
+      <button class="primary" onclick="openSharePage('${shareId}')">打开可转发页面</button>
       <button class="secondary" onclick="copyShareLink('${shareId}')">复制分享链接</button>
     </div>
     <p class="share-link-text">${shareUrl}</p>
@@ -465,29 +464,6 @@ async function copyShareLink(shareId) {
   } catch {
     window.prompt("复制这个分享链接", url);
   }
-}
-
-async function nativeShare(shareId, scene = "invite") {
-  const title = {
-    invite: "来光仔卡牌收集名场面",
-    rank: "我在光仔卡牌冲榜了",
-    card: "我抽到了光仔卡牌名场面"
-  }[scene] || "光仔卡牌";
-  const url = shareLink(shareId);
-  const payload = {
-    title,
-    text: "推开名场面之殿，开一枚记忆晶核，看看你能捞回哪个游戏瞬间。",
-    url
-  };
-  if (navigator.share) {
-    try {
-      await navigator.share(payload);
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-    }
-  }
-  showShareGuide(shareId, scene);
 }
 
 function showHelpGuide() {
@@ -793,7 +769,6 @@ window.submitPackChoice = submitPackChoice;
 window.nextTourStep = nextTourStep;
 window.finishTour = finishTour;
 window.shareScene = shareScene;
-window.nativeShare = nativeShare;
 window.copyShareLink = copyShareLink;
 window.openSharePage = openSharePage;
 window.goShare = shareId => {
