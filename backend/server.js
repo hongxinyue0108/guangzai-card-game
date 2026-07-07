@@ -32,6 +32,7 @@ let mysqlPool = null;
 let mysqlSchemaReady = false;
 let redisClient = null;
 let redisReady = false;
+let redisConnecting = null;
 const SCORE_MILESTONES = [
   { score: 100, drawChances: 1, text: "积分达到 100，奖励 1 次抽卡" },
   { score: 260, drawChances: 1, fragments: 20, text: "积分达到 260，奖励 1 次抽卡 + 20 碎片" },
@@ -190,21 +191,45 @@ async function mysqlQuery(sql, params = []) {
 async function redis() {
   if (!REDIS_URL) return null;
   if (redisReady) return redisClient;
+  if (redisClient?.isOpen) {
+    redisReady = true;
+    return redisClient;
+  }
+  if (redisConnecting) return redisConnecting;
   if (!redisClient) {
     const { createClient } = require("redis");
     redisClient = createClient({ url: REDIS_URL });
     redisClient.on("error", error => {
       redisReady = false;
+      redisConnecting = null;
       console.error("redis error:", error.message);
     });
+    redisClient.on("end", () => {
+      redisReady = false;
+      redisConnecting = null;
+    });
   }
-  try {
+
+  redisConnecting = (async () => {
     await redisClient.connect();
     redisReady = true;
     return redisClient;
+  })();
+
+  try {
+    return await redisConnecting;
   } catch (error) {
+    redisReady = false;
+    redisConnecting = null;
+    if (redisClient?.isOpen) {
+      try {
+        await redisClient.disconnect();
+      } catch {}
+    }
     console.error("redis connect failed:", error.message);
     return null;
+  } finally {
+    if (redisReady) redisConnecting = null;
   }
 }
 
@@ -1026,11 +1051,29 @@ function todayEvents(db, predicate) {
   return db.events.filter(event => event.createdAt && todayOf(event.createdAt) === date && predicate(event));
 }
 
-function taskStatus(user, db = null) {
+function dailyTaskState(user) {
   ensureUserShape(user);
   const date = today();
-  const drawCount = db ? todayEvents(db, event => event.type === "pack_open" && event.userId === user.id).length : 0;
-  const shareCount = db ? todayEvents(db, event => event.type === "share_create" && event.userId === user.id).length : 0;
+  const current = user.challengeState.dailyTasks;
+  if (!current || current.date !== date) {
+    user.challengeState.dailyTasks = { date, packOpens: 0, shares: 0 };
+  }
+  user.challengeState.dailyTasks.packOpens ||= 0;
+  user.challengeState.dailyTasks.shares ||= 0;
+  return user.challengeState.dailyTasks;
+}
+
+function addDailyTaskProgress(user, key, amount = 1) {
+  const state = dailyTaskState(user);
+  state[key] = Math.max(0, (state[key] || 0) + amount);
+  return state;
+}
+
+function dailyTaskRules(user, db) {
+  ensureUserShape(user);
+  const taskState = dailyTaskState(user);
+  const drawCount = taskState.packOpens || 0;
+  const shareCount = taskState.shares || 0;
   const collectionCount = Object.keys(user.ownedCards).length;
   return [
     {
@@ -1039,7 +1082,9 @@ function taskStatus(user, db = null) {
       progress: Math.min(drawCount, 3),
       target: 3,
       reward: "+1 抽卡",
-      claimed: Boolean(user.taskRewards[`${date}:draw3`])
+      done: drawCount >= 3,
+      drawChances: 1,
+      text: "今日抽 3 次卡完成，奖励 1 次抽卡"
     },
     {
       id: "share1",
@@ -1047,7 +1092,9 @@ function taskStatus(user, db = null) {
       progress: Math.min(shareCount, 1),
       target: 1,
       reward: "+1 抽卡",
-      claimed: Boolean(user.taskRewards[`${date}:share1`])
+      done: shareCount >= 1,
+      drawChances: 1,
+      text: "今日分享任务完成，奖励 1 次抽卡"
     },
     {
       id: "collect16",
@@ -1055,29 +1102,43 @@ function taskStatus(user, db = null) {
       progress: Math.min(collectionCount, 16),
       target: 16,
       reward: "+30 碎片",
-      claimed: Boolean(user.taskRewards[`${date}:collect16`])
+      done: collectionCount >= 16,
+      fragments: 30,
+      text: "收集 16 张不同卡完成，奖励 30 碎片"
     }
   ];
 }
 
-function applyDailyTasks(user, db) {
+function taskStatus(user, db = null) {
   ensureUserShape(user);
   const date = today();
-  const rewards = [];
-  const rules = [
-    { id: "draw3", done: todayEvents(db, event => event.type === "pack_open" && event.userId === user.id).length >= 3, drawChances: 1, text: "今日抽 3 次卡完成，奖励 1 次抽卡" },
-    { id: "share1", done: todayEvents(db, event => event.type === "share_create" && event.userId === user.id).length >= 1, drawChances: 1, text: "今日分享任务完成，奖励 1 次抽卡" },
-    { id: "collect16", done: Object.keys(user.ownedCards).length >= 16, fragments: 30, text: "收集 16 张不同卡完成，奖励 30 碎片" }
-  ];
-  for (const rule of rules) {
-    const key = `${date}:${rule.id}`;
-    if (!rule.done || user.taskRewards[key]) continue;
-    user.taskRewards[key] = true;
-    if (rule.drawChances) addDrawChances(user, rule.drawChances);
-    if (rule.fragments) user.fragments += rule.fragments;
-    rewards.push(rule.text);
-  }
-  return rewards;
+  return dailyTaskRules(user, db).map(rule => {
+    const claimed = rule.done && Boolean(user.taskRewards[`${date}:${rule.id}`]);
+    return {
+      id: rule.id,
+      title: rule.title,
+      progress: rule.progress,
+      target: rule.target,
+      reward: rule.reward,
+      done: rule.done,
+      claimed,
+      claimable: rule.done && !claimed
+    };
+  });
+}
+
+function claimDailyTask(user, db, taskId) {
+  ensureUserShape(user);
+  const date = today();
+  const rule = dailyTaskRules(user, db).find(item => item.id === taskId);
+  if (!rule) return { error: "任务不存在" };
+  const key = `${date}:${rule.id}`;
+  if (user.taskRewards[key]) return { error: "这个任务今天已经领取过了" };
+  if (!rule.done) return { error: "任务还没有完成" };
+  user.taskRewards[key] = true;
+  if (rule.drawChances) addDrawChances(user, rule.drawChances);
+  if (rule.fragments) user.fragments += rule.fragments;
+  return { reward: rule.text };
 }
 
 function applySeriesRewards(user) {
@@ -1181,17 +1242,11 @@ async function handleMySQL(req, res, url) {
       const user = await getMysqlUserByToken(req);
       if (!user) return json(res, 401, { message: "请先登录" });
       const recovered = recoverDrawChances(user);
-      const events = await getMysqlTodayUserEvents(user.id);
-      const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
-      if (recovered || rewards.length) {
+      if (recovered) {
         await updateMysqlPlayer(user);
         await invalidateRankingCache();
       }
-      return json(res, 200, { user: await mysqlUserView(user, true), rewards });
+      return json(res, 200, { user: await mysqlUserView(user, true), rewards: [] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/draw") {
@@ -1241,8 +1296,8 @@ async function handleMySQL(req, res, url) {
       ]);
       drawEvents.forEach(event => queueMysqlEvent(event));
       events.push(packOpenEvent, ...drawEvents);
+      addDailyTaskProgress(user, "packOpens", 1);
       const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
         ...applySeriesRewards(user),
         ...applyMilestoneRewards(user)
       ];
@@ -1278,7 +1333,6 @@ async function handleMySQL(req, res, url) {
       queueMysqlEvent({ type: "exchange", userId: user.id, cardId: card.id });
       const events = await getMysqlTodayUserEvents(user.id);
       const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
         ...applySeriesRewards(user),
         ...applyMilestoneRewards(user)
       ];
@@ -1290,7 +1344,7 @@ async function handleMySQL(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/share/create") {
       const user = await getMysqlUserByToken(req);
       if (!user) return json(res, 401, { message: "请先登录" });
-      const recovered = recoverDrawChances(user);
+      recoverDrawChances(user);
       const body = await parseBody(req);
       const scene = String(body.scene || "invite");
       const share = {
@@ -1304,24 +1358,27 @@ async function handleMySQL(req, res, url) {
       };
       const shareEvent = { type: "share_create", userId: user.id, shareId: share.id, scene, createdAt: share.createdAt };
       await upsertMysqlShare(share);
-      const events = await getMysqlTodayUserEvents(user.id);
-      events.push(shareEvent);
-      const rewards = [
-        ...applyDailyTasks(user, { events, drawRecords: [] }),
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
-      await insertMysqlEvent(shareEvent);
-      if (recovered || rewards.length) {
-        await updateMysqlPlayer(user);
-        await invalidateRankingCache();
-      }
+      addDailyTaskProgress(user, "shares", 1);
+      queueMysqlEvent(shareEvent);
+      await updateMysqlPlayer(user);
       return json(res, 200, {
         share,
         shareUrl: `../frontend/share.html?shareId=${share.id}`,
-        rewards,
-        user: await mysqlUserView(user, true)
+        rewards: [],
+        user: userView(user, { drawRecords: [], events: [shareEvent] })
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/task/claim") {
+      const user = await getMysqlUserByToken(req);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const body = await parseBody(req);
+      const events = await getMysqlTodayUserEvents(user.id);
+      const result = claimDailyTask(user, { events, drawRecords: [] }, String(body.taskId || ""));
+      if (result.error) return json(res, 400, { message: result.error });
+      await updateMysqlPlayer(user);
+      await invalidateRankingCache();
+      return json(res, 200, { rewards: [result.reward], user: await mysqlUserView(user, true) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/share/visit") {
@@ -1455,9 +1512,8 @@ async function handle(req, res) {
       const user = currentUser(req, db);
       if (!user) return json(res, 401, { message: "请先登录" });
       const recovered = recoverDrawChances(user);
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
-      if (recovered || rewards.length) await writeDb(db);
-      return json(res, 200, { user: userView(user, db), rewards });
+      if (recovered) await writeDb(db);
+      return json(res, 200, { user: userView(user, db), rewards: [] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/draw") {
@@ -1495,7 +1551,8 @@ async function handle(req, res) {
         record(db, { type: "draw", userId: user.id, cardId: item.card.id, duplicated: item.result.duplicated });
       });
       record(db, { type: "pack_open", userId: user.id });
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      addDailyTaskProgress(user, "packOpens", 1);
+      const rewards = [...applySeriesRewards(user), ...applyMilestoneRewards(user)];
       if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
       await writeDb(db);
       return json(res, 200, {
@@ -1525,7 +1582,7 @@ async function handle(req, res) {
       user.ownedCards[card.id] = 1;
       user.score += card.score;
       record(db, { type: "exchange", userId: user.id, cardId: card.id });
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      const rewards = [...applySeriesRewards(user), ...applyMilestoneRewards(user)];
       await writeDb(db);
       return json(res, 200, { card, rewards, user: userView(user, db) });
     }
@@ -1547,9 +1604,19 @@ async function handle(req, res) {
       };
       db.shares.push(share);
       record(db, { type: "share_create", userId: user.id, shareId: share.id, scene, createdAt: share.createdAt });
-      const rewards = [...applyDailyTasks(user, db), ...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      addDailyTaskProgress(user, "shares", 1);
       await writeDb(db);
-      return json(res, 200, { share, shareUrl: `../frontend/share.html?shareId=${share.id}`, rewards, user: userView(user, db) });
+      return json(res, 200, { share, shareUrl: `../frontend/share.html?shareId=${share.id}`, rewards: [], user: userView(user, db) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/task/claim") {
+      const user = currentUser(req, db);
+      if (!user) return json(res, 401, { message: "请先登录" });
+      const body = await parseBody(req);
+      const result = claimDailyTask(user, db, String(body.taskId || ""));
+      if (result.error) return json(res, 400, { message: result.error });
+      await writeDb(db);
+      return json(res, 200, { rewards: [result.reward], user: userView(user, db) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/share/visit") {

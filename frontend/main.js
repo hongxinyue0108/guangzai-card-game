@@ -233,6 +233,20 @@ function rewardHtml(rewards = []) {
   `;
 }
 
+function showRewardNotice(rewards = []) {
+  if (!rewards.length) return;
+  $("#modalContent").innerHTML = `
+    <div class="guide reward-notice">
+      <p class="eyebrow">奖励到账</p>
+      <h3>新的奖励已领取</h3>
+      <div class="reward-list standalone">
+        ${rewards.map(text => `<p>${text}</p>`).join("")}
+      </div>
+    </div>
+  `;
+  $("#modal").classList.remove("hidden");
+}
+
 function cardFace(card, owned = true) {
   return `<div class="card-art">${owned ? '<span class="card-art-mark"></span>' : "?"}</div>`;
 }
@@ -554,7 +568,7 @@ async function syncProfile({ silent = true } = {}) {
   try {
     const data = await request("/api/profile");
     applyServerUser(data.user);
-    if (!silent && data.rewards?.length) data.rewards.forEach(reward => toast(reward));
+    if (!silent && data.rewards?.length) showRewardNotice(data.rewards);
   } catch (error) {
     if (!silent) toast(error.message);
     if (/请先登录|401/.test(error.message)) {
@@ -595,12 +609,17 @@ function renderTasks() {
   const tasks = state.user.tasks || [];
   $("#taskList").innerHTML = tasks.map(task => {
     const percent = Math.round((task.progress / task.target) * 100);
+    const status = task.claimed ? "已领取" : task.claimable ? "可领取" : "未完成";
+    const claimButton = task.claimable
+      ? `<button class="secondary task-claim" onclick="claimTask('${task.id}')">领取</button>`
+      : "";
     return `
-      <div class="task-row ${task.claimed ? "done" : ""}">
+      <div class="task-row ${task.claimed ? "done" : ""} ${task.claimable ? "claimable" : ""}">
         <div>
           <strong>${task.title}</strong>
-          <small>${task.progress}/${task.target} · ${task.reward}${task.claimed ? " · 已领取" : ""}</small>
+          <small>${task.progress}/${task.target} · ${task.reward} · ${status}</small>
         </div>
+        ${claimButton}
         <div class="bar"><span style="width:${percent}%"></span></div>
       </div>
     `;
@@ -714,9 +733,23 @@ async function exchangeCard(cardId) {
       method: "POST",
       body: JSON.stringify({ cardId })
     });
-    toast(`兑换成功：${data.card.name}${rewardHtml(data.rewards)}`);
+    toast(`兑换成功：${data.card.name}`);
     applyServerUser(data.user);
+    showRewardNotice(data.rewards || []);
     showCardDetail(cardId);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function claimTask(taskId) {
+  try {
+    const data = await request("/api/task/claim", {
+      method: "POST",
+      body: JSON.stringify({ taskId })
+    });
+    applyServerUser(data.user);
+    showRewardNotice(data.rewards || []);
   } catch (error) {
     toast(error.message);
   }
@@ -729,7 +762,7 @@ async function shareScene(scene) {
       body: JSON.stringify({ scene })
     });
     applyServerUser(data.user);
-    (data.rewards || []).forEach(reward => toast(reward));
+    showRewardNotice(data.rewards || []);
     showSharePoster(scene, data.share.id);
   } catch (error) {
     toast(error.message);
@@ -737,6 +770,7 @@ async function shareScene(scene) {
 }
 
 window.exchangeCard = exchangeCard;
+window.claimTask = claimTask;
 window.showCardDetail = showCardDetail;
 window.togglePackChoice = togglePackChoice;
 window.submitPackChoice = submitPackChoice;
@@ -767,7 +801,7 @@ async function submitAuth() {
     applyServerUser(data.user);
     localStorage.setItem("gz_token", state.token);
     if (data.rewards?.length) {
-      data.rewards.forEach(reward => toast(reward));
+      showRewardNotice(data.rewards);
     }
     maybeStartOnboarding();
   } catch (error) {

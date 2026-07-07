@@ -799,10 +799,24 @@ button:disabled {
   background: rgba(36, 43, 64, 0.72);
 }
 
+.task-row {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
 .task-row.done,
 .series-row.done {
   border-color: rgba(120, 211, 127, 0.58);
   background: rgba(120, 211, 127, 0.1);
+}
+
+.task-row.claimable {
+  border-color: rgba(255, 205, 92, 0.78);
+}
+
+.task-claim {
+  min-width: 78px;
+  padding: 8px 14px;
 }
 
 .task-row strong,
@@ -817,6 +831,7 @@ button:disabled {
 }
 
 .bar {
+  grid-column: 1 / -1;
   height: 8px;
   overflow: hidden;
   border-radius: 99px;
