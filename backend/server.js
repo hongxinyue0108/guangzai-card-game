@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-
+console.log("当前运行的 server.js 已加载：return/profile debug 版本");
 const DB_FILE = path.join(__dirname, "db.json");
 const ROOT_DIR = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
@@ -33,19 +33,6 @@ let mysqlSchemaReady = false;
 let redisClient = null;
 let redisReady = false;
 let redisConnecting = null;
-const SCORE_MILESTONES = [
-  { score: 100, drawChances: 1, text: "积分达到 100，奖励 1 次抽卡" },
-  { score: 260, drawChances: 1, fragments: 20, text: "积分达到 260，奖励 1 次抽卡 + 20 碎片" },
-  { score: 520, drawChances: 2, text: "积分达到 520，奖励 2 次抽卡" },
-  { score: 900, drawChances: 3, fragments: 50, text: "积分达到 900，奖励 3 次抽卡 + 50 碎片" }
-];
-const PACK_MILESTONES = [
-  { packs: 5, drawChances: 1, text: "累计开包 5 次，返还 1 次抽卡" },
-  { packs: 10, drawChances: 1, fragments: 20, text: "累计开包 10 次，返还 1 次抽卡 + 20 碎片" },
-  { packs: 20, drawChances: 2, text: "累计开包 20 次，返还 2 次抽卡" },
-  { packs: 35, drawChances: 3, fragments: 40, text: "累计开包 35 次，返还 3 次抽卡 + 40 碎片" }
-];
-
 const SERIES = ["竞技高光", "冥场面", "社区梗", "经典瞬间"];
 const NPC_RANKING = [];
 const RARITIES = {
@@ -124,6 +111,33 @@ const CARDS = [
   quote
 }));
 
+const MENU_COMBOS = [
+  {
+    id: "peace-elite",
+    game: "和平精英",
+    title: "和平精英名场面菜单",
+    cardIds: ["c016", "c001", "c015"],
+    reward: { drawChances: 3 },
+    text: "触发「和平精英」菜单组合，奖励 3 次抽卡机会"
+  },
+  {
+    id: "lol-mobile",
+    game: "英雄联盟手游",
+    title: "英雄联盟手游名场面菜单",
+    cardIds: ["c018", "c019", "c020"],
+    reward: { drawChances: 5 },
+    text: "触发「英雄联盟手游」菜单组合，奖励 5 次抽卡机会"
+  },
+  {
+    id: "jcc",
+    game: "金铲铲之战",
+    title: "金铲铲之战名场面菜单",
+    cardIds: ["c033", "c032", "c031"],
+    reward: { fragments: 4 },
+    text: "触发「金铲铲之战」菜单组合，奖励 4 碎片"
+  }
+];
+
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
@@ -184,8 +198,20 @@ async function mysql() {
 
 async function mysqlQuery(sql, params = []) {
   const pool = await mysql();
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+
+  const safeParams = params.map(value => value === undefined ? null : value);
+
+  try {
+    const [rows] = await pool.execute(sql, safeParams);
+    return rows;
+  } catch (error) {
+    console.error("MySQL 执行失败");
+    console.error("SQL:", sql);
+    console.error("原始参数:", params);
+    console.error("修正参数:", safeParams);
+    console.error("错误:", error);
+    throw error;
+  }
 }
 
 async function redis() {
@@ -438,7 +464,11 @@ async function getMysqlUserByToken(req) {
     );
     userId = rows[0]?.player_id;
   }
-  const user = userId ? await getMysqlPlayerById(userId) : null;
+  if (!userId) return null;
+
+  const user = await getMysqlPlayerById(userId);
+  if (!user) return null;
+
   cacheUser(token, user);
   return user;
 }
@@ -492,10 +522,13 @@ async function insertMysqlDrawRecord(record) {
 }
 
 async function getMysqlRecentDrawRecords(userId, limit = 20) {
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+
   const rows = await mysqlQuery(
-    "select * from draw_records where player_id = ? order by created_at desc limit ?",
-    [userId, Number(limit)]
+      `select * from draw_records where player_id = ? order by created_at desc limit ${safeLimit}`,
+      [userId]
   );
+
   return rows.map(mysqlDrawRecord);
 }
 
@@ -771,15 +804,16 @@ function ensureUserShape(user) {
   if (!isObject(user)) return;
   user.id ||= id("usr");
   user.nickname ||= user.username || "拾忆者";
-  user.ownedCards ||= {};
-  user.shareRewards ||= {};
-  user.taskRewards ||= {};
-  user.seriesRewards ||= {};
-  user.milestoneRewards ||= {};
+  if (!isObject(user.ownedCards)) user.ownedCards = {};
+  if (!isObject(user.shareRewards)) user.shareRewards = {};
+  if (!isObject(user.taskRewards)) user.taskRewards = {};
+  if (!isObject(user.seriesRewards)) user.seriesRewards = {};
+  if (!isObject(user.milestoneRewards)) user.milestoneRewards = {};
   user.milestoneRewards.score ||= {};
   user.milestoneRewards.packs ||= {};
-  user.challengeState ||= {};
-  user.effectState ||= {};
+  if (!isObject(user.challengeState)) user.challengeState = {};
+  if (!isObject(user.challengeState.menuCombos)) user.challengeState.menuCombos = {};
+  if (!isObject(user.effectState)) user.effectState = {};
   user.fragments ||= 0;
   user.score ||= 0;
   user.drawChances ||= 0;
@@ -1142,38 +1176,20 @@ function claimDailyTask(user, db, taskId) {
 }
 
 function applySeriesRewards(user) {
-  ensureUserShape(user);
-  const rewards = [];
-  for (const series of SERIES) {
-    const cards = CARDS.filter(card => card.series === series);
-    const completed = cards.every(card => user.ownedCards[card.id]);
-    if (!completed || user.seriesRewards[series]) continue;
-    user.seriesRewards[series] = true;
-    addDrawChances(user, 2);
-    user.fragments += 30;
-    rewards.push(`集齐「${series}」系列，奖励 2 抽 + 30 碎片`);
-  }
-  return rewards;
+  return applyMenuComboRewards(user);
 }
 
-function applyMilestoneRewards(user) {
+function applyMenuComboRewards(user) {
   ensureUserShape(user);
   const rewards = [];
-  for (const milestone of SCORE_MILESTONES) {
-    const key = String(milestone.score);
-    if (user.score < milestone.score || user.milestoneRewards.score[key]) continue;
-    user.milestoneRewards.score[key] = true;
-    if (milestone.drawChances) addDrawChances(user, milestone.drawChances);
-    if (milestone.fragments) user.fragments += milestone.fragments;
-    rewards.push(milestone.text);
-  }
-  for (const milestone of PACK_MILESTONES) {
-    const key = String(milestone.packs);
-    if (user.openedPacks < milestone.packs || user.milestoneRewards.packs[key]) continue;
-    user.milestoneRewards.packs[key] = true;
-    if (milestone.drawChances) addDrawChances(user, milestone.drawChances);
-    if (milestone.fragments) user.fragments += milestone.fragments;
-    rewards.push(milestone.text);
+  for (const combo of MENU_COMBOS) {
+    if (user.challengeState.menuCombos[combo.id]) continue;
+    const completed = combo.cardIds.every(cardId => user.ownedCards[cardId]);
+    if (!completed) continue;
+    user.challengeState.menuCombos[combo.id] = true;
+    if (combo.reward.drawChances) addDrawChances(user, combo.reward.drawChances);
+    if (combo.reward.fragments) user.fragments += combo.reward.fragments;
+    rewards.push(combo.text);
   }
   return rewards;
 }
@@ -1181,7 +1197,7 @@ function applyMilestoneRewards(user) {
 async function handleMySQL(req, res, url) {
   try {
     if (req.method === "GET" && url.pathname === "/api/cards") {
-      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES });
+      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES, menuCombos: MENU_COMBOS });
     }
 
     if (req.method === "POST" && url.pathname === "/api/register") {
@@ -1217,7 +1233,7 @@ async function handleMySQL(req, res, url) {
       await setMysqlSession(token, user.id);
       cacheUser(token, user);
       queueMysqlEvent({ type: "register", userId: user.id });
-      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }) });
+      return json(res, 200, { token, user: userView(user, { drawRecords: [], events: [] }), rewards: ["注册成功，获得 3 次初始抽卡机会"] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/login") {
@@ -1297,10 +1313,7 @@ async function handleMySQL(req, res, url) {
       drawEvents.forEach(event => queueMysqlEvent(event));
       events.push(packOpenEvent, ...drawEvents);
       addDailyTaskProgress(user, "packOpens", 1);
-      const rewards = [
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
+      const rewards = applyMenuComboRewards(user);
       if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
       await updateMysqlPlayer(user);
       await invalidateRankingCache();
@@ -1332,10 +1345,7 @@ async function handleMySQL(req, res, url) {
       user.score += card.score;
       queueMysqlEvent({ type: "exchange", userId: user.id, cardId: card.id });
       const events = await getMysqlTodayUserEvents(user.id);
-      const rewards = [
-        ...applySeriesRewards(user),
-        ...applyMilestoneRewards(user)
-      ];
+      const rewards = applyMenuComboRewards(user);
       await updateMysqlPlayer(user);
       await invalidateRankingCache();
       return json(res, 200, { card, rewards, user: userView(user, { drawRecords: [], events }) });
@@ -1373,12 +1383,10 @@ async function handleMySQL(req, res, url) {
       const user = await getMysqlUserByToken(req);
       if (!user) return json(res, 401, { message: "请先登录" });
       const body = await parseBody(req);
-      const events = await getMysqlTodayUserEvents(user.id);
-      const result = claimDailyTask(user, { events, drawRecords: [] }, String(body.taskId || ""));
+      const result = claimDailyTask(user, { drawRecords: [], events: [] }, String(body.taskId || ""));
       if (result.error) return json(res, 400, { message: result.error });
       await updateMysqlPlayer(user);
-      await invalidateRankingCache();
-      return json(res, 200, { rewards: [result.reward], user: await mysqlUserView(user, true) });
+      return json(res, 200, { rewards: [result.reward], user: userView(user, { drawRecords: [], events: [] }) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/share/visit") {
@@ -1387,10 +1395,12 @@ async function handleMySQL(req, res, url) {
       if (!share) return json(res, 404, { message: "分享不存在" });
       const owner = await getMysqlPlayerById(share.userId);
       if (!owner) return json(res, 404, { message: "分享者不存在" });
+      const viewer = await getMysqlUserByToken(req);
       share.visits += 1;
       const shareEvent = {
         type: "share_visit",
         shareId: share.id,
+        userId: viewer?.id || null,
         ownerId: owner.id,
         scene: share.scene,
         rewarded: false,
@@ -1398,7 +1408,14 @@ async function handleMySQL(req, res, url) {
       };
       await upsertMysqlShare(share);
       await insertMysqlEvent(shareEvent);
-      return json(res, 200, { share, owner: { nickname: owner.nickname }, reward: null, taskRewards: [] });
+      return json(res, 200, {
+        share,
+        owner: { nickname: owner.nickname },
+        redirect: Boolean(viewer),
+        target: "./index.html#homePage",
+        reward: null,
+        taskRewards: []
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/ranking") {
@@ -1439,6 +1456,8 @@ async function handleMySQL(req, res, url) {
 
     return json(res, 404, { message: "接口不存在" });
   } catch (error) {
+    console.error("接口处理失败：", req.method, url.pathname);
+    console.error(error);
     return json(res, 500, { message: "服务器错误", detail: error.message });
   }
 }
@@ -1453,7 +1472,7 @@ async function handle(req, res) {
 
   try {
     if (req.method === "GET" && url.pathname === "/api/cards") {
-      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES });
+      return json(res, 200, { cards: CARDS, series: SERIES, rarities: RARITIES, menuCombos: MENU_COMBOS });
     }
 
     if (req.method === "POST" && url.pathname === "/api/register") {
@@ -1488,7 +1507,7 @@ async function handle(req, res) {
       db.sessions[token] = user.id;
       record(db, { type: "register", userId: user.id });
       await writeDb(db);
-      return json(res, 200, { token, user: userView(user, db) });
+      return json(res, 200, { token, user: userView(user, db), rewards: ["注册成功，获得 3 次初始抽卡机会"] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/login") {
@@ -1509,11 +1528,18 @@ async function handle(req, res) {
     }
 
     if (req.method === "GET" && url.pathname === "/api/profile") {
-      const user = currentUser(req, db);
-      if (!user) return json(res, 401, { message: "请先登录" });
-      const recovered = recoverDrawChances(user);
-      if (recovered) await writeDb(db);
-      return json(res, 200, { user: userView(user, db), rewards: [] });
+      const user = await getMysqlUserByToken(req);
+      if (!user || !user.id) {
+        return json(res, 401, { message: "请先登录" });
+      }
+
+      recoverDrawChances(user);
+      await updateMysqlPlayer(user);
+
+      return json(res, 200, {
+        user: await mysqlUserView(user, true),
+        rewards: []
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/draw") {
@@ -1552,7 +1578,7 @@ async function handle(req, res) {
       });
       record(db, { type: "pack_open", userId: user.id });
       addDailyTaskProgress(user, "packOpens", 1);
-      const rewards = [...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      const rewards = applyMenuComboRewards(user);
       if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
       await writeDb(db);
       return json(res, 200, {
@@ -1582,7 +1608,7 @@ async function handle(req, res) {
       user.ownedCards[card.id] = 1;
       user.score += card.score;
       record(db, { type: "exchange", userId: user.id, cardId: card.id });
-      const rewards = [...applySeriesRewards(user), ...applyMilestoneRewards(user)];
+      const rewards = applyMenuComboRewards(user);
       await writeDb(db);
       return json(res, 200, { card, rewards, user: userView(user, db) });
     }
@@ -1625,11 +1651,19 @@ async function handle(req, res) {
       if (!share) return json(res, 404, { message: "分享不存在" });
       const owner = db.users.find(user => user.id === share.userId);
       if (!owner) return json(res, 404, { message: "分享者不存在" });
+      const viewer = currentUser(req, db);
       share.visits += 1;
-      const shareEvent = { type: "share_visit", shareId: share.id, ownerId: owner.id, scene: share.scene, rewarded: false };
+      const shareEvent = { type: "share_visit", shareId: share.id, userId: viewer?.id || null, ownerId: owner.id, scene: share.scene, rewarded: false };
       db.events.push({ id: id("evt"), createdAt: new Date().toISOString(), ...shareEvent });
       await writeDb(db);
-      return json(res, 200, { share, owner: { nickname: owner.nickname }, reward: null, taskRewards: [] });
+      return json(res, 200, {
+        share,
+        owner: { nickname: owner.nickname },
+        redirect: Boolean(viewer),
+        target: "./index.html#homePage",
+        reward: null,
+        taskRewards: []
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/ranking") {
@@ -1679,6 +1713,8 @@ async function handle(req, res) {
 
     return json(res, 404, { message: "接口不存在" });
   } catch (error) {
+    console.error("接口处理失败：", req.method, url.pathname);
+    console.error(error);
     return json(res, 500, { message: "服务器错误", detail: error.message });
   }
 }

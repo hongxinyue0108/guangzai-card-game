@@ -6,12 +6,14 @@ const state = {
   user: null,
   cards: [],
   series: [],
+  menuCombos: [],
   introTimer: null,
   introCountdownTimer: null,
   tourIndex: 0,
   tourSteps: [],
   pendingPack: null,
-  selectedPackSlots: []
+  selectedPackSlots: [],
+  claimingTasks: new Set()
 };
 
 const $ = selector => document.querySelector(selector);
@@ -125,12 +127,12 @@ function finishIntro(sceneTimer = null) {
 
 function buildTourSteps() {
   return [
-    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也能通过点击分享入口、积分档位、累计开包和 24 点成功获得。" },
-    { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，达到积分档位还会奖励抽卡次数。" },
-    { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也能通过分享任务、开包任务、菜单组合和 24 点成功获得。" },
+    { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，稀有度越高积分越多。" },
+    { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，越容易凑齐菜单组合并提升排行榜竞争力。" },
     { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
     { key: "pack", title: "记忆晶核", text: "这里开包抽取 4 张名场面卡。每张卡会显示点数，选出的 3 张能凑出 24 点时返还 1 次抽卡机会。" },
-    { key: "album", title: "卡册", text: "卡册是你的梗档案馆。收集新卡会增加积分、提升排行榜名次；集齐一个系列还能领取额外抽卡次数和碎片。" },
+    { key: "album", title: "卡册", text: "卡册是你的梗档案馆。收集新卡会增加积分、提升排行榜名次；集齐指定菜单组合会自动触发额外奖励。" },
     { key: "rank", title: "排行榜", text: "排行榜主要按积分排序。想提升排行，就多开包、收集高价值新卡，并用碎片补齐卡册。" },
     { key: "disclaimer", title: "展示说明", text: "本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。账号和密码仅用于保存你的游戏进度，方便再次登录。" }
   ];
@@ -497,7 +499,7 @@ function showHelpGuide() {
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
-          <p>用于开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也可通过点击分享入口、积分档位、累计开包返还和 24 点成功获得。</p>
+          <p>用于开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也可通过分享任务、开包任务、菜单组合和 24 点成功获得。</p>
         </div>
         <div>
           <strong>积分</strong>
@@ -505,7 +507,7 @@ function showHelpGuide() {
         </div>
         <div>
           <strong>收集</strong>
-          <p>表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，积分、系列奖励和排行榜竞争力都会更高。</p>
+          <p>表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，越容易凑齐菜单组合并提升排行榜竞争力。</p>
         </div>
         <div>
           <strong>碎片</strong>
@@ -523,11 +525,11 @@ function showHelpGuide() {
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>注册初始获得 3 次；之后每日首次登录 +3。每天第一次点击任意分享入口、累计开包 3 次、积分/开包里程碑、以及选中的 3 张卡成功凑出 24 点，都会奖励抽卡次数。</p>
+        <p>注册初始获得 3 次；之后每日首次登录 +3。每天第一次点击任意分享入口、完成每日开包任务、集齐指定菜单组合，以及选中的 3 张卡成功凑出 24 点，都会奖励抽卡次数。</p>
       </div>
       <div class="guide-ranking">
-        <strong>里程碑奖励</strong>
-        <p>积分达到 100、260、520、900，或累计开包达到 5、10、20、35，会自动领取阶段奖励；部分档位还会附带碎片。</p>
+        <strong>菜单组合奖励</strong>
+        <p>菜单组合必须集齐指定的 3 张卡才会触发，不是任意同系列卡。当前组合包括和平精英、英雄联盟手游、金铲铲之战三组。</p>
       </div>
     </div>
   `;
@@ -546,6 +548,7 @@ async function loadCards() {
   const data = await request("/api/cards");
   state.cards = data.cards;
   state.series = data.series;
+  state.menuCombos = data.menuCombos || [];
   $("#albumSeries").innerHTML = state.series.map(name => `<option value="${name}">${name}</option>`).join("");
 }
 
@@ -609,9 +612,11 @@ function renderTasks() {
   const tasks = state.user.tasks || [];
   $("#taskList").innerHTML = tasks.map(task => {
     const percent = Math.round((task.progress / task.target) * 100);
-    const status = task.claimed ? "已领取" : task.claimable ? "可领取" : "未完成";
-    const claimButton = task.claimable
-      ? `<button class="secondary task-claim" onclick="claimTask('${task.id}')">领取</button>`
+    const claiming = state.claimingTasks.has(task.id);
+    const canClaim = Boolean(task.claimable && !task.claimed && !claiming);
+    const status = task.claimed ? "已领取" : claiming ? "领取中" : task.claimable ? "可领取" : "未完成";
+    const claimButton = (canClaim || claiming)
+      ? `<button class="secondary task-claim" ${claiming ? "disabled" : ""} onclick="claimTask('${task.id}')">${claiming ? "领取中" : "领取"}</button>`
       : "";
     return `
       <div class="task-row ${task.claimed ? "done" : ""} ${task.claimable ? "claimable" : ""}">
@@ -627,16 +632,20 @@ function renderTasks() {
 }
 
 function renderSeriesGoals() {
-  $("#seriesList").innerHTML = state.series.map(series => {
-    const cards = state.cards.filter(card => card.series === series);
+  const combos = state.menuCombos || [];
+  $("#seriesList").innerHTML = combos.map(combo => {
+    const cards = combo.cardIds.map(id => state.cards.find(card => card.id === id)).filter(Boolean);
+    if (!cards.length) return "";
     const owned = cards.filter(card => state.user.ownedCards[card.id]).length;
     const percent = Math.round((owned / cards.length) * 100);
-    const claimed = Boolean(state.user.seriesRewards?.[series]);
+    const claimed = Boolean(state.user.challengeState?.menuCombos?.[combo.id]);
+    const names = cards.map(card => card.name).join(" + ");
+    const reward = combo.reward?.drawChances ? `${combo.reward.drawChances} 次抽卡机会` : `${combo.reward?.fragments || 0} 碎片`;
     return `
       <div class="series-row ${claimed ? "done" : ""}">
         <div>
-          <strong>${series}</strong>
-          <small>${owned}/${cards.length}${claimed ? " · 奖励已领取" : ""}</small>
+          <strong>${combo.title || combo.game}</strong>
+          <small>${names}<br>${owned}/${cards.length} · 奖励 ${reward}${claimed ? " · 已触发" : ""}</small>
         </div>
         <div class="bar"><span style="width:${percent}%"></span></div>
       </div>
@@ -743,14 +752,21 @@ async function exchangeCard(cardId) {
 }
 
 async function claimTask(taskId) {
+  if (state.claimingTasks.has(taskId)) return;
+  state.claimingTasks.add(taskId);
+  renderTasks();
   try {
     const data = await request("/api/task/claim", {
       method: "POST",
       body: JSON.stringify({ taskId })
     });
+    state.claimingTasks.delete(taskId);
     applyServerUser(data.user);
     showRewardNotice(data.rewards || []);
   } catch (error) {
+    state.claimingTasks.delete(taskId);
+    await syncProfile({ silent: true });
+    renderTasks();
     toast(error.message);
   }
 }
@@ -797,12 +813,21 @@ async function submitAuth() {
       method: "POST",
       body: JSON.stringify({ nickname, password })
     });
+
     state.token = data.token;
-    applyServerUser(data.user);
     localStorage.setItem("gz_token", state.token);
+    applyServerUser(data.user);
+
+    const afterLoginPage = sessionStorage.getItem("gz_after_login_page");
+    if (afterLoginPage) {
+      sessionStorage.removeItem("gz_after_login_page");
+      showPage(afterLoginPage);
+    }
+
     if (data.rewards?.length) {
       showRewardNotice(data.rewards);
     }
+
     maybeStartOnboarding();
   } catch (error) {
     $("#authMessage").textContent = error.message;

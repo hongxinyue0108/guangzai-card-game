@@ -4,6 +4,7 @@ const shareId = params.get("shareId");
 const ownerPreview = params.get("from") === "owner";
 const returnGame = document.querySelector("#returnGame");
 const shareCurrentPage = document.querySelector("#shareCurrentPage");
+const token = localStorage.getItem("gz_token") || "";
 
 async function visitShare() {
   if (!shareId) {
@@ -21,11 +22,18 @@ async function visitShare() {
   try {
     const response = await fetch(`${API}/api/share/visit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ shareId })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "分享访问失败");
+    if (data.redirect && data.target) {
+      window.location.href = data.target;
+      return;
+    }
     document.querySelector("#shareText").textContent = `你正在访问 ${data.owner.nickname} 的分享页面。`;
     document.querySelector("#rewardText").textContent = "访问已记录。登录后也可以点击游戏内分享入口完成每日分享任务。";
   } catch (error) {
@@ -52,5 +60,14 @@ shareCurrentPage.addEventListener("click", async () => {
   }
 });
 returnGame.addEventListener("click", () => {
-  window.location.href = sessionStorage.getItem("gz_return_to_game") || "./index.html#homePage";
+  sessionStorage.setItem("gz_after_login_page", "homePage");
+
+  const savedReturn = sessionStorage.getItem("gz_return_to_game");
+
+  if (savedReturn) {
+    window.location.href = savedReturn;
+    return;
+  }
+
+  window.location.href = "./index.html#homePage";
 });
