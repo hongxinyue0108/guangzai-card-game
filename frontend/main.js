@@ -1,4 +1,5 @@
 const API = "";
+const CARD_IMAGE_IDS = new Set(["c001", "c002", "c003", "c004", "c005", "c006", "c007", "c008", "c009"]);
 
 const state = {
   token: localStorage.getItem("gz_token") || "",
@@ -13,6 +14,8 @@ const state = {
   tourSteps: [],
   pendingPack: null,
   selectedPackSlots: [],
+  shareHighlightCard: null,
+  currentRank: null,
   claimingTasks: new Set()
 };
 
@@ -127,7 +130,7 @@ function finishIntro(sceneTimer = null) {
 
 function buildTourSteps() {
   return [
-    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也能通过分享任务、开包任务、菜单组合和 24 点成功获得。" },
+    { key: "draws", title: "抽卡次数", text: "抽卡次数用来开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也能通过分享任务、累计开包返利、菜单组合和 24 点成功获得。" },
     { key: "score", title: "积分", text: "积分是排行榜核心。抽到新卡会提升积分，稀有度越高积分越多。" },
     { key: "collection", title: "收集", text: "收集表示你已经解锁的卡牌数量。馆藏共 54 张，收集越多，越容易凑齐菜单组合并提升排行榜竞争力。" },
     { key: "fragments", title: "碎片", text: "碎片用于在卡册中兑换未解锁卡牌。重复卡也会自动转化为碎片。" },
@@ -249,7 +252,25 @@ function showRewardNotice(rewards = []) {
   $("#modal").classList.remove("hidden");
 }
 
-function cardFace(card, owned = true) {
+function cardFace(card, owned = true, mode = "default") {
+  const hasImage = CARD_IMAGE_IDS.has(card.id);
+  if (owned && mode === "preview") {
+    const media = hasImage
+      ? `<img src="./assets/cards/${card.id}.png" alt="${card.name}" loading="lazy" />`
+      : `<div class="card-art preview-placeholder"><span class="card-art-mark"></span></div>`;
+    return `
+      <div class="image-card-face preview-card-face">
+        ${media}
+      </div>
+    `;
+  }
+  if (owned && hasImage) {
+    return `
+      <div class="image-card-face">
+        <img src="./assets/cards/${card.id}.png" alt="${card.name}" loading="lazy" />
+      </div>
+    `;
+  }
   return `<div class="card-art">${owned ? '<span class="card-art-mark"></span>' : "?"}</div>`;
 }
 
@@ -267,6 +288,7 @@ function showPackChoiceResult(packData) {
       <p class="eyebrow">四张候选卡</p>
       <h3>选择 3 张放入卡册</h3>
       <p class="message">点数会用于 24 点判定。未选择的 1 张会被丢弃，不进入卡册。</p>
+      <p id="packChoiceWarning" class="pack-choice-warning hidden"></p>
       <div class="pack-result-grid">
         ${cards.map(item => {
           const owned = Boolean(state.user?.ownedCards?.[item.id]);
@@ -276,7 +298,7 @@ function showPackChoiceResult(packData) {
             <span class="ownership-mark ${owned ? "owned" : "new"}">${owned ? "已拥有" : "NEW"}</span>
             <span class="choice-mark">未选</span>
             <div class="card-shine"></div>
-            ${cardFace(item)}
+            ${cardFace(item, true, "preview")}
             <strong>${item.name}</strong>
             ${cardMeta(item)}
             <p>${item.quote}</p>
@@ -291,6 +313,11 @@ function showPackChoiceResult(packData) {
 }
 
 function renderPackChoiceState() {
+  const warning = $("#packChoiceWarning");
+  if (warning) {
+    warning.classList.add("hidden");
+    warning.textContent = "";
+  }
   $$(".pack-choice-card").forEach(card => {
     const onclick = card.getAttribute("onclick") || "";
     const slotId = onclick.match(/'([^']+)'/)?.[1];
@@ -313,7 +340,12 @@ function togglePackChoice(slotId) {
   } else if (state.selectedPackSlots.length < 3) {
     state.selectedPackSlots.push(slotId);
   } else {
-    toast("只能选择 3 张放入卡册，先取消一张再选新的。");
+    const warning = $("#packChoiceWarning");
+    if (warning) {
+      warning.textContent = "只能选择 3 张放入卡册，先取消一张再选新的。";
+      warning.classList.remove("hidden");
+    }
+    return;
   }
   renderPackChoiceState();
 }
@@ -342,14 +374,24 @@ function showCardResult(card, result, packData = null) {
   const results = packData?.results?.length ? packData.results : [result];
   const puzzle24 = packData?.puzzle24 || null;
   const rewards = result.rewards || [];
-  const hasShareCard = cards.some(item => ["rare", "epic", "legend", "hidden"].includes(item.rarity));
-  const action = hasShareCard
+  const shareCandidates = cards
+    .map((item, index) => ({ card: item, result: results[index] || {} }))
+    .filter(item => ["legend", "hidden"].includes(item.card.rarity));
+  state.shareHighlightCard = shareCandidates.find(item => item.result.collectorRank) || shareCandidates[0] || null;
+  const action = state.shareHighlightCard
     ? `<button class="secondary" onclick="shareScene('card')">分享这张卡 · 领取任务奖励</button>`
     : "";
   const totalScore = results.reduce((sum, item) => sum + (item.scoreGained || 0), 0);
   const totalFragments = results.reduce((sum, item) => sum + (item.fragmentsGained || 0), 0);
   const newCount = results.filter(item => !item.duplicated).length;
   const duplicateCount = results.filter(item => item.duplicated).length;
+  const resultStatus = (item, cardItem) => {
+    if (!item) return "";
+    const drawText = item.drawRank ? ` · 本服第 ${item.drawRank} 次抽到` : "";
+    if (item.duplicated) return `重复 +${item.fragmentsGained} 碎片${drawText}`;
+    const rankText = item.collectorRank && ["legend", "hidden"].includes(cardItem?.rarity) ? ` · 第 ${item.collectorRank} 个收录者` : "";
+    return `新卡 +${item.scoreGained || 0} 积分${rankText}${drawText}`;
+  };
   $("#modalContent").innerHTML = `
     <div class="result-showcase">
       <p class="eyebrow">入册结算</p>
@@ -358,10 +400,11 @@ function showCardResult(card, result, packData = null) {
           <div class="card result-card pack-result-card rarity-${item.rarity}">
             <span class="point-badge">${item.point || "?"}</span>
             <div class="card-shine"></div>
-            ${cardFace(item)}
+            ${cardFace(item, true, "preview")}
             <strong>${item.name}</strong>
             ${cardMeta(item)}
-            <p>${results[index]?.duplicated ? `重复 +${results[index].fragmentsGained} 碎片` : `新卡 +${results[index]?.scoreGained || 0} 积分`}</p>
+            <p>${item.quote}</p>
+            <p class="result-mini-status">${resultStatus(results[index], item)}</p>
           </div>
         `).join("")}
       </div>
@@ -380,22 +423,34 @@ function showCardResult(card, result, packData = null) {
   $("#modal").classList.remove("hidden");
 }
 
-function showSharePoster(scene, shareId) {
+function showSharePoster(scene, shareId, highlight = null) {
   const sceneText = {
     invite: "邀请好友来收集名场面",
     rank: "晒出我的排行榜战绩",
     card: "炫耀刚抽到的稀有卡"
   }[scene] || "分享光仔卡牌";
   const shareUrl = shareLink(shareId);
-  $("#modalContent").innerHTML = `
-    <div class="share-card-preview">
-      <p class="eyebrow">分享卡片预览</p>
-      <h3>${sceneText}</h3>
+  const highlightCard = scene === "card" ? highlight?.card : null;
+  const highlightResult = scene === "card" ? highlight?.result : null;
+  const collectorText = highlightResult?.collectorRank ? `你是第 ${highlightResult.collectorRank} 个收录者` : "传说名场面已收录";
+  const shareVisual = highlightCard ? `
+      <div class="share-feature-card rarity-${highlightCard.rarity}">
+        ${cardFace(highlightCard, true, "preview")}
+        <div class="share-rank-badge">${collectorText}</div>
+      </div>
+      <p>我在光仔卡牌里抽到了「${highlightCard.name}」，${collectorText}。</p>
+    ` : `
       <div class="share-mini-card">
         <span>光仔卡牌</span>
         <strong>名场面召集令</strong>
       </div>
       <p>我在光仔卡牌里打开了名场面之殿，来一起抽一包。</p>
+    `;
+  $("#modalContent").innerHTML = `
+    <div class="share-card-preview">
+      <p class="eyebrow">分享卡片预览</p>
+      <h3>${sceneText}</h3>
+      ${shareVisual}
       <small>分享码：${shareId}</small>
     </div>
     <p class="disclaimer compact">本游戏为光核训练营作业展示，仅用于技术交流与测试，非商业运营产品，不涉及充值盈利。</p>
@@ -437,8 +492,14 @@ function showShareGuide(shareId, scene = "invite") {
   const env = shareEnv();
   const envName = env === "wechat" ? "微信" : env === "qq" ? "QQ" : "当前浏览器";
   const shareUrl = shareLink(shareId);
-  $("#modalContent").innerHTML = `
-    <div class="share-card-preview">
+  const isRankShare = scene === "rank";
+  const rankText = state.currentRank?.rank ? `全服第 ${state.currentRank.rank} 名` : "排行榜";
+  const headerHtml = isRankShare ? `
+      <p class="eyebrow">排行榜分享</p>
+      <h3>快来围观吧！</h3>
+      <p class="rank-share-copy">我在光仔卡牌中获得${rankText}，你也来试试！</p>
+      <small>分享码：${shareId}</small>
+    ` : `
       <p class="eyebrow">${envName}分享方式</p>
       <h3>用右上角菜单转发</h3>
       <div class="share-mini-card">
@@ -446,6 +507,10 @@ function showShareGuide(shareId, scene = "invite") {
         <strong>${shareId}</strong>
       </div>
       <p>${envName}里如果不能直接弹出好友列表，请先打开可转发页面，再点右上角「...」选择发送给朋友/分享到群。</p>
+    `;
+  $("#modalContent").innerHTML = `
+    <div class="share-card-preview">
+      ${headerHtml}
     </div>
     <div class="share-steps">
       <p><strong>方式一：</strong>打开可转发页面，然后点右上角「...」转发。</p>
@@ -479,7 +544,7 @@ function showHelpGuide() {
       <div class="guide-grid">
         <div>
           <strong>抽卡次数</strong>
-          <p>用于开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也可通过分享任务、开包任务、菜单组合和 24 点成功获得。</p>
+          <p>用于开启记忆晶核。注册初始获得 3 次；之后每日首次登录 +3，也可通过分享任务、累计开包返利、菜单组合和 24 点成功获得。</p>
         </div>
         <div>
           <strong>积分</strong>
@@ -505,7 +570,7 @@ function showHelpGuide() {
       </div>
       <div class="guide-ranking">
         <strong>抽卡次数怎么变多？</strong>
-        <p>注册初始获得 3 次；之后每日首次登录 +3。每天第一次点击任意分享入口、完成每日开包任务、集齐指定菜单组合，以及选中的 3 张卡成功凑出 24 点，都会奖励抽卡次数。</p>
+        <p>注册初始获得 3 次；之后每日首次登录 +3。每天第一次点击任意分享入口、今日抽满 3 次、累计开包达到 10/30/50 次、集齐指定菜单组合，以及选中的 3 张卡成功凑出 24 点，都会奖励抽卡次数。</p>
       </div>
       <div class="guide-ranking">
         <strong>菜单组合奖励</strong>
@@ -707,6 +772,7 @@ function showCardDetail(cardId) {
 async function loadRanking() {
   const data = await request("/api/ranking");
   const rows = data.ranking.length ? data.ranking : [{ rank: 1, nickname: "暂无玩家", score: 0, collected: 0, total: state.cards.length }];
+  state.currentRank = rows.find(row => row.userId === state.user?.id || row.nickname === state.user?.nickname) || null;
   $("#rankingList").innerHTML = rows.map(row => `
     <div class="rank-row">
       <b>#${row.rank}</b>
@@ -758,8 +824,17 @@ async function shareScene(scene) {
       body: JSON.stringify({ scene })
     });
     applyServerUser(data.user);
+    if (scene === "invite") {
+      openSharePage(data.share.id);
+      return;
+    }
     showRewardNotice(data.rewards || []);
-    showSharePoster(scene, data.share.id);
+    const highlight = scene === "card" ? state.shareHighlightCard : null;
+    if (highlight) {
+      showSharePoster(scene, data.share.id, highlight);
+    } else {
+      showShareGuide(data.share.id, scene);
+    }
   } catch (error) {
     toast(error.message);
   }

@@ -3,7 +3,6 @@ const params = new URLSearchParams(window.location.search);
 const shareId = params.get("shareId");
 const ownerPreview = params.get("from") === "owner";
 const returnGame = document.querySelector("#returnGame");
-const shareCurrentPage = document.querySelector("#shareCurrentPage");
 const token = localStorage.getItem("gz_token") || "";
 
 async function visitShare() {
@@ -42,23 +41,6 @@ async function visitShare() {
 }
 
 visitShare();
-shareCurrentPage.addEventListener("click", async () => {
-  if (!navigator.share) {
-    document.querySelector("#rewardText").textContent = "当前浏览器不支持直接拉起分享，请点右上角「...」发送给朋友或群。";
-    return;
-  }
-  try {
-    await navigator.share({
-      title: "光仔卡牌",
-      text: "来抽一张名场面卡。",
-      url: window.location.href
-    });
-  } catch (error) {
-    if (error?.name !== "AbortError") {
-      document.querySelector("#rewardText").textContent = "没有拉起分享时，请点右上角「...」发送给朋友或群。";
-    }
-  }
-});
 returnGame.addEventListener("click", () => {
   sessionStorage.setItem("gz_after_login_page", "homePage");
 

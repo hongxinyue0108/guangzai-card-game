@@ -45,19 +45,19 @@ const RARITIES = {
 
 const CARDS = [
   ["c001", "伏地魔的胜利", "竞技高光", "normal", "和平精英", "伏地不是怂，是对大地的忠诚。"],
-  ["c002", "有老六，有老六！", "竞技高光", "rare", "和平精英", "前方刚枪猛如虎，身后老六偷屁股。"],
-  ["c003", "经济局翻盘", "竞技高光", "rare", "无畏契约", "经济局不是劣势，是打脸的前奏。"],
-  ["c004", "康康的1v3残局", "竞技高光", "epic", "无畏契约", "不需要声音——三根弹道线就是三个击杀。"],
-  ["c005", "whzy血量仅剩一滴", "竞技高光", "epic", "无畏契约", "whzy告诉你残局不是数学题——是阅读理解。"],
-  ["c006", "名刀司命", "竞技高光", "legend", "KPL", "他出了一个名刀司命！"],
-  ["c007", "Fly的关羽", "竞技高光", "legend", "KPL", "Fly的关羽——不是骑马，是骑在对面脸上。"],
-  ["c008", "天神下凡", "竞技高光", "legend", "LPL", "天神下凡，一锤四。"],
-  ["c009", "永远滴神", "竞技高光", "legend", "LPL", "乌兹，永远滴神。"],
+  ["c002", "有老六，有老六！", "竞技高光", "normal", "和平精英", "前方刚枪猛如虎，身后老六偷屁股。"],
+  ["c003", "经济局翻盘", "竞技高光", "normal", "无畏契约", "经济局不是劣势，是打脸的前奏。"],
+  ["c004", "康康的1v3残局", "竞技高光", "rare", "无畏契约", "不需要声音—三根弹道线就是三个击杀。"],
+  ["c005", "whzy血量仅剩一滴", "竞技高光", "rare", "无畏契约", "whzy告诉你残局不是数学题—是阅读理解。"],
+  ["c006", "名刀司命", "竞技高光", "normal", "KPL", "他出了一个名刀司命！"],
+  ["c007", "Fly的关羽", "竞技高光", "normal", "KPL", "Fly的关羽—不是骑马，是骑在对面脸上。"],
+  ["c008", "天神下凡", "竞技高光", "normal", "LPL", "天神下凡，一锤四。"],
+  ["c009", "永远滴神", "竞技高光", "normal", "LPL", "乌兹，永远滴神。"],
   ["c010", "让二追三", "竞技高光", "epic", "LPL", "让二追三不是奇迹，是TES给全世界上的一课。"],
-  ["c011", "太阳升起就把昨天忘掉", "竞技高光", "epic", "LPL", "太阳升起时，就把昨天忘掉。"],
-  ["c012", "Faker沙皇推五个", "竞技高光", "hidden", "LCK", "不必知道比分——这一帧就够了。"],
-  ["c013", "Faker的四冠", "竞技高光", "hidden", "LCK", "传奇永不熄——他用了七年证明这句话。"],
-  ["c014", "Deft最后一舞", "竞技高光", "legend", "LCK", "十年一冠，最后一舞——Deft配得上这个结局。"],
+  ["c011", "太阳升起就把昨天忘掉", "竞技高光", "rare", "LPL", "太阳升起时，就把昨天忘掉。"],
+  ["c012", "Faker沙皇推五个", "竞技高光", "hidden", "LCK", "不必知道比分—这一帧就够了。"],
+  ["c013", "Faker的四冠", "竞技高光", "epic", "LCK", "传奇永不熄——他用了七年证明这句话。"],
+  ["c014", "Deft最后一舞", "竞技高光", "legend", "LCK", "十年一冠，最后一舞—Deft配得上这个结局。"],
   ["c015", "救救我！救救我！", "冥场面", "normal", "和平精英", "本想等队友救命，没想到等来一场坟头电摇表演。"],
   ["c016", "人体描边大师", "冥场面", "normal", "和平精英", "你的枪法，一幅完美的轮廓画。"],
   ["c017", "落地成盒", "冥场面", "rare", "和平精英", "吃鸡玩家的共同初体验——我还没落地，战斗已结束。"],
@@ -67,7 +67,7 @@ const CARDS = [
   ["c021", "团战可以输", "冥场面", "normal", "王者荣耀", "团战可以输，鲁班必须死。"],
   ["c022", "干得漂亮", "冥场面", "normal", "王者荣耀", "这四个字，是王者最狠的脏话。"],
   ["c023", "射手孤儿路", "冥场面", "normal", "王者荣耀", "发育路不是路，是孤儿院。"],
-  ["c024", "精准Timing", "冥场面", "rare", "无畏契约", "0.1秒的遗憾，一生的阴影。"],
+  ["c024", "精准Timing", "冥场面", "epic", "无畏契约", "0.1秒的遗憾，一生的阴影。"],
   ["c025", "搜打撤", "冥场面", "normal", "三角洲行动", "搜打撤，搜了白搜，打了白打，撤了白撤。"],
   ["c026", "一诺行为", "冥场面", "legend", "KPL", "一诺把队友全杀了！——这一刀，永远留在KPL历史里。"],
   ["c027", "1557", "冥场面", "hidden", "LPL", "1557——SKT最不愿提的数字。"],
@@ -84,17 +84,17 @@ const CARDS = [
   ["c038", "排队人数999+", "社区梗", "normal", "通用/光子", "光子的服务器——不登不知道，一登前面还有三千人。"],
   ["c039", "久诚的干将", "社区梗", "epic", "KPL", "久诚的干将，锁头挂都不敢这么准。"],
   ["c040", "为什么不ban猛犸", "社区梗", "legend", "DOTA2", "为什么不ban猛犸——DOTA圈永远的悬案。"],
-  ["c041", "蛋总解说", "社区梗", "rare", "CS", "蛋总的声带不是声带，是CS的专属BGM。"],
+  ["c041", "蛋总解说", "社区梗", "normal", "CS", "蛋总的声带不是声带，是CS的专属BGM。"],
   ["c042", "地铁鼠鼠", "经典瞬间", "normal", "和平精英", "正式确诊为地铁鼠鼠！"],
   ["c043", "鼠鼠", "经典瞬间", "normal", "三角洲行动", "鼠鼠我呀，又来捡垃圾了。"],
-  ["c044", "三星五费", "经典瞬间", "epic", "金铲铲之战", "三星五费不是阵容，是信仰。"],
-  ["c045", "王炸！", "经典瞬间", "rare", "欢乐斗地主", "王炸——斗地主最高礼仪。"],
-  ["c046", "十七张牌你能秒我", "经典瞬间", "rare", "欢乐斗地主", "十七张牌你能秒我？——还真能。"],
-  ["c047", "盲狙天使", "经典瞬间", "legend", "CS", "盲狙天使，简单的男人。"],
+  ["c044", "三星五费", "经典瞬间", "rare", "金铲铲之战", "三星五费不是阵容，是信仰。"],
+  ["c045", "王炸！", "经典瞬间", "normal", "欢乐斗地主", "王炸——斗地主最高礼仪。"],
+  ["c046", "十七张牌你能秒我", "经典瞬间", "normal", "欢乐斗地主", "十七张牌你能秒我？——还真能。"],
+  ["c047", "盲狙天使", "经典瞬间", "epic", "CS", "盲狙天使，简单的男人。"],
   ["c048", "s1mple低头", "经典瞬间", "epic", "CS", "他低头的时候，你就知道对面没了。"],
-  ["c049", "恭喜OG", "经典瞬间", "hidden", "DOTA2", "恭喜OG——没有人相信他们能赢，除了他们自己。"],
+  ["c049", "恭喜OG", "经典瞬间", "normal", "DOTA2", "恭喜OG——没有人相信他们能赢，除了他们自己。"],
   ["c050", "烟火", "经典瞬间", "legend", "DOTA2", "我叫Maybe，因为一切都是命中注定——但烟火不是。"],
-  ["c051", "虎先锋三拳", "经典瞬间", "epic", "黑神话：悟空", "你不是第一个死在这里的，也不是最后一个。"],
+  ["c051", "虎先锋三拳", "经典瞬间", "normal", "黑神话：悟空", "你不是第一个死在这里的，也不是最后一个。"],
   ["c052", "二郎神启动", "经典瞬间", "rare", "黑神话：悟空", "二郎神启动——全网的颈椎都跟着转了。"],
   ["c053", "影心丢骰子", "经典瞬间", "rare", "博德之门3", "我相信命运——命运说我大失败。"],
   ["c054", "工厂流水线", "经典瞬间", "normal", "幻兽帕鲁", "帕鲁不是伙伴，是生产力。"]
@@ -118,7 +118,7 @@ const MENU_COMBOS = [
     title: "和平精英名场面菜单",
     cardIds: ["c016", "c001", "c015"],
     reward: { drawChances: 3 },
-    text: "触发「和平精英」菜单组合，奖励 3 次抽卡机会"
+    text: "触发「和平精英」彩蛋组合，奖励 3 次抽卡机会"
   },
   {
     id: "lol-mobile",
@@ -126,7 +126,7 @@ const MENU_COMBOS = [
     title: "英雄联盟手游名场面菜单",
     cardIds: ["c018", "c019", "c020"],
     reward: { drawChances: 5 },
-    text: "触发「英雄联盟手游」菜单组合，奖励 5 次抽卡机会"
+    text: "触发「英雄联盟手游」彩蛋组合，奖励 5 次抽卡机会"
   },
   {
     id: "jcc",
@@ -134,7 +134,7 @@ const MENU_COMBOS = [
     title: "金铲铲之战名场面菜单",
     cardIds: ["c033", "c032", "c031"],
     reward: { fragments: 4 },
-    text: "触发「金铲铲之战」菜单组合，奖励 4 碎片"
+    text: "触发「金铲铲之战」彩蛋组合，奖励 4 碎片"
   }
 ];
 
@@ -530,6 +530,41 @@ async function getMysqlRecentDrawRecords(userId, limit = 20) {
   );
 
   return rows.map(mysqlDrawRecord);
+}
+
+function mysqlJsonCardPath(cardId) {
+  const safeId = String(cardId || "");
+  if (!/^[a-z0-9_-]+$/i.test(safeId)) return null;
+  return `$.${safeId}`;
+}
+
+async function countMysqlCardOwners(cardId) {
+  const path = mysqlJsonCardPath(cardId);
+  if (!path) return 0;
+  const rows = await mysqlQuery(
+    "select count(*) as count from players where json_contains_path(owned_cards, 'one', ?)",
+    [path]
+  );
+  return Number(rows[0]?.count || 0);
+}
+
+async function countMysqlCardDraws(cardId) {
+  const rows = await mysqlQuery(
+    "select count(*) as count from draw_records where card_id = ?",
+    [cardId]
+  );
+  return Number(rows[0]?.count || 0);
+}
+
+async function attachMysqlCardStats(pack) {
+  await Promise.all(pack.draws.map(async item => {
+    const [drawRank, collectorRank] = await Promise.all([
+      countMysqlCardDraws(item.card.id),
+      item.result.duplicated ? Promise.resolve(null) : countMysqlCardOwners(item.card.id)
+    ]);
+    item.result.drawRank = drawRank;
+    if (collectorRank) item.result.collectorRank = collectorRank;
+  }));
 }
 
 async function getMysqlTodayUserEvents(userId) {
@@ -1080,6 +1115,23 @@ function record(db, event) {
   db.events.push({ id: id("evt"), createdAt: new Date().toISOString(), ...event });
 }
 
+function countLocalCardOwners(db, cardId) {
+  return db.users.filter(user => user.ownedCards && user.ownedCards[cardId]).length;
+}
+
+function countLocalCardDraws(db, cardId) {
+  return db.drawRecords.filter(record => record.cardId === cardId).length;
+}
+
+function attachLocalCardStats(pack, db) {
+  for (const item of pack.draws) {
+    item.result.drawRank = countLocalCardDraws(db, item.card.id);
+    if (!item.result.duplicated) {
+      item.result.collectorRank = countLocalCardOwners(db, item.card.id);
+    }
+  }
+}
+
 function todayEvents(db, predicate) {
   const date = today();
   return db.events.filter(event => event.createdAt && todayOf(event.createdAt) === date && predicate(event));
@@ -1137,17 +1189,55 @@ function dailyTaskRules(user, db) {
       target: 16,
       reward: "+30 碎片",
       done: collectionCount >= 16,
+      scope: "lifetime",
       fragments: 30,
       text: "收集 16 张不同卡完成，奖励 30 碎片"
+    },
+    {
+      id: "pack10",
+      title: "累计开包 10 次",
+      progress: Math.min(user.openedPacks, 10),
+      target: 10,
+      reward: "+2 抽卡",
+      done: user.openedPacks >= 10,
+      scope: "lifetime",
+      drawChances: 2,
+      text: "累计开包 10 次完成，奖励 2 次抽卡"
+    },
+    {
+      id: "pack30",
+      title: "累计开包 30 次",
+      progress: Math.min(user.openedPacks, 30),
+      target: 30,
+      reward: "+4 抽卡",
+      done: user.openedPacks >= 30,
+      scope: "lifetime",
+      drawChances: 4,
+      text: "累计开包 30 次完成，奖励 4 次抽卡"
+    },
+    {
+      id: "pack50",
+      title: "累计开包 50 次",
+      progress: Math.min(user.openedPacks, 50),
+      target: 50,
+      reward: "+10 抽卡",
+      done: user.openedPacks >= 50,
+      scope: "lifetime",
+      drawChances: 10,
+      text: "累计开包 50 次完成，奖励 10 次抽卡"
     }
   ];
+}
+
+function taskRewardKey(rule, date = today()) {
+  return rule.scope === "lifetime" ? `lifetime:${rule.id}` : `${date}:${rule.id}`;
 }
 
 function taskStatus(user, db = null) {
   ensureUserShape(user);
   const date = today();
   return dailyTaskRules(user, db).map(rule => {
-    const claimed = rule.done && Boolean(user.taskRewards[`${date}:${rule.id}`]);
+    const claimed = rule.done && Boolean(user.taskRewards[taskRewardKey(rule, date)]);
     return {
       id: rule.id,
       title: rule.title,
@@ -1166,8 +1256,8 @@ function claimDailyTask(user, db, taskId) {
   const date = today();
   const rule = dailyTaskRules(user, db).find(item => item.id === taskId);
   if (!rule) return { error: "任务不存在" };
-  const key = `${date}:${rule.id}`;
-  if (user.taskRewards[key]) return { error: "这个任务今天已经领取过了" };
+  const key = taskRewardKey(rule, date);
+  if (user.taskRewards[key]) return { error: "这个任务已经领取过了" };
   if (!rule.done) return { error: "任务还没有完成" };
   user.taskRewards[key] = true;
   if (rule.drawChances) addDrawChances(user, rule.drawChances);
@@ -1316,6 +1406,7 @@ async function handleMySQL(req, res, url) {
       const rewards = applyMenuComboRewards(user);
       if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
       await updateMysqlPlayer(user);
+      await attachMysqlCardStats(pack);
       await invalidateRankingCache();
       return json(res, 200, {
         card: { ...pack.highlight.card, point: pack.highlight.point },
@@ -1580,6 +1671,7 @@ async function handle(req, res) {
       addDailyTaskProgress(user, "packOpens", 1);
       const rewards = applyMenuComboRewards(user);
       if (pack.puzzle24.reward) rewards.unshift(pack.puzzle24.reward.text);
+      attachLocalCardStats(pack, db);
       await writeDb(db);
       return json(res, 200, {
         card: { ...pack.highlight.card, point: pack.highlight.point },
