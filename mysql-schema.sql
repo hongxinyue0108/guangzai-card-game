@@ -34,6 +34,7 @@ create table if not exists shares (
   scene varchar(64) not null,
   visits int not null default 0,
   rewarded tinyint(1) not null default 0,
+  payload json null,
   created_at datetime(3) not null default current_timestamp(3),
   index idx_shares_player_id (player_id),
   constraint fk_shares_player foreign key (player_id) references players(id) on delete cascade

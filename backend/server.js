@@ -191,6 +191,11 @@ async function mysql() {
     } catch (error) {
       if (!/Duplicate column/i.test(error.message)) throw error;
     }
+    try {
+      await mysqlPool.execute("alter table shares add column payload json null after rewarded");
+    } catch (error) {
+      if (!/Duplicate column/i.test(error.message)) throw error;
+    }
     mysqlSchemaReady = true;
   }
   return mysqlPool;
@@ -595,15 +600,16 @@ async function getMysqlShareById(shareId) {
     scene: row.scene,
     visits: row.visits,
     rewarded: Boolean(row.rewarded),
+    payload: parseJsonValue(row.payload, {}),
     createdAt: isoDate(row.created_at)
   };
 }
 
 async function upsertMysqlShare(share) {
   await mysqlQuery(
-    `insert into shares (id, player_id, nickname, scene, visits, rewarded, created_at)
-     values (?, ?, ?, ?, ?, ?, ?)
-     on duplicate key update visits = values(visits), rewarded = values(rewarded)`,
+    `insert into shares (id, player_id, nickname, scene, visits, rewarded, payload, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?)
+     on duplicate key update visits = values(visits), rewarded = values(rewarded), payload = values(payload)`,
     [
       share.id,
       share.userId,
@@ -611,6 +617,7 @@ async function upsertMysqlShare(share) {
       share.scene,
       share.visits,
       Number(Boolean(share.rewarded)),
+      JSON.stringify(share.payload || {}),
       sqlDate(share.createdAt)
     ]
   );
@@ -1269,6 +1276,22 @@ function applySeriesRewards(user) {
   return applyMenuComboRewards(user);
 }
 
+function buildSharePayload(body) {
+  const scene = String(body.scene || "invite");
+  if (scene !== "card" || !isObject(body.highlight)) return {};
+  const card = CARDS.find(item => item.id === body.highlight.cardId);
+  if (!card || !["legend", "hidden"].includes(card.rarity)) return {};
+  const collectorRank = Math.max(0, Number(body.highlight.collectorRank || 0));
+  const drawRank = Math.max(0, Number(body.highlight.drawRank || 0));
+  return {
+    highlight: {
+      card,
+      collectorRank: collectorRank || null,
+      drawRank: drawRank || null
+    }
+  };
+}
+
 function applyMenuComboRewards(user) {
   ensureUserShape(user);
   const rewards = [];
@@ -1448,6 +1471,7 @@ async function handleMySQL(req, res, url) {
       recoverDrawChances(user);
       const body = await parseBody(req);
       const scene = String(body.scene || "invite");
+      const payload = buildSharePayload(body);
       const share = {
         id: id("shr"),
         userId: user.id,
@@ -1455,6 +1479,7 @@ async function handleMySQL(req, res, url) {
         scene,
         visits: 0,
         rewarded: false,
+        payload,
         createdAt: new Date().toISOString()
       };
       const shareEvent = { type: "share_create", userId: user.id, shareId: share.id, scene, createdAt: share.createdAt };
@@ -1502,6 +1527,7 @@ async function handleMySQL(req, res, url) {
       return json(res, 200, {
         share,
         owner: { nickname: owner.nickname },
+        payload: share.payload || {},
         redirect: Boolean(viewer),
         target: "./index.html#homePage",
         reward: null,
@@ -1711,6 +1737,7 @@ async function handle(req, res) {
       recoverDrawChances(user);
       const body = await parseBody(req);
       const scene = String(body.scene || "invite");
+      const payload = buildSharePayload(body);
       const share = {
         id: id("shr"),
         userId: user.id,
@@ -1718,6 +1745,7 @@ async function handle(req, res) {
         scene,
         visits: 0,
         rewarded: false,
+        payload,
         createdAt: new Date().toISOString()
       };
       db.shares.push(share);
@@ -1751,6 +1779,7 @@ async function handle(req, res) {
       return json(res, 200, {
         share,
         owner: { nickname: owner.nickname },
+        payload: share.payload || {},
         redirect: Boolean(viewer),
         target: "./index.html#homePage",
         reward: null,

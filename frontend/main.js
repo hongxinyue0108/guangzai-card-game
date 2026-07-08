@@ -819,9 +819,17 @@ async function claimTask(taskId) {
 
 async function shareScene(scene) {
   try {
+    const highlight = scene === "card" ? state.shareHighlightCard : null;
     const data = await request("/api/share/create", {
       method: "POST",
-      body: JSON.stringify({ scene })
+      body: JSON.stringify({
+        scene,
+        highlight: highlight ? {
+          cardId: highlight.card.id,
+          collectorRank: highlight.result.collectorRank || null,
+          drawRank: highlight.result.drawRank || null
+        } : null
+      })
     });
     applyServerUser(data.user);
     if (scene === "invite") {
@@ -829,7 +837,6 @@ async function shareScene(scene) {
       return;
     }
     showRewardNotice(data.rewards || []);
-    const highlight = scene === "card" ? state.shareHighlightCard : null;
     if (highlight) {
       showSharePoster(scene, data.share.id, highlight);
     } else {
