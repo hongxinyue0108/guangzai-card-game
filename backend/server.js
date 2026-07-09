@@ -115,7 +115,7 @@ const MENU_COMBOS = [
   {
     id: "peace-elite",
     game: "和平精英",
-    title: "和平精英名场面彩蛋 ",
+    title: "和平精英名场面彩蛋",
     cardIds: ["c016", "c001", "c015"],
     reward: { drawChances: 3 },
     text: "触发「和平精英」彩蛋组合，奖励 3 次抽卡机会"
@@ -123,7 +123,7 @@ const MENU_COMBOS = [
   {
     id: "lol-mobile",
     game: "英雄联盟手游",
-    title: "英雄联盟手游名场面彩蛋 ",
+    title: "英雄联盟手游名场面彩蛋",
     cardIds: ["c018", "c019", "c020"],
     reward: { drawChances: 5 },
     text: "触发「英雄联盟手游」彩蛋组合，奖励 5 次抽卡机会"
@@ -131,7 +131,7 @@ const MENU_COMBOS = [
   {
     id: "jcc",
     game: "金铲铲之战",
-    title: "金铲铲之战名场面彩蛋 ",
+    title: "金铲铲之战名场面彩蛋",
     cardIds: ["c033", "c032", "c031"],
     reward: { fragments: 4 },
     text: "触发「金铲铲之战」彩蛋组合，奖励 4 碎片"
